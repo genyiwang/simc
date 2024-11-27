@@ -5,7 +5,14 @@ level=80
 race=mechagnome
 role=spell
 position=ranged_back
-talents=CAEAAAAAAAAAAAAAAAAAAAAAAYGbmtZBzYGzmBmZ0YMzYGGmZmZYMzMzYmZmZmZMYGIAAwMz2yyyMTbAAAAAAYAAAAAAAAA
+# Mythic+
+talents=CAEAAAAAAAAAAAAAAAAAAAAAAMzYzsZBzYmZW8AwMjGjxYmZwwMMzMzMzMzMzMzYmZGzAAAAzMbLLLzMtBAAAAAALAAAAAAAAA
+
+desired_targets=1
+
+optimal_raid=0
+override.arcane_intellect=1
+override.bloodlust=0
 
 # Default consumables
 potion=tempered_potion_3
