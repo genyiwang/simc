@@ -8,7 +8,7 @@ position=ranged_back
 # Mythic+
 talents=CAEAAAAAAAAAAAAAAAAAAAAAAMzYzsZBzYmZW8AwMjGjxYmZwwMMzMzMzMzMzMzYmZGzAAAAzMbLLLzMtBAAAAAALAAAAAAAAA
 
-desired_targets=1
+desired_targets=5
 
 optimal_raid=0
 override.arcane_intellect=1
