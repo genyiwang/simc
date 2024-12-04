@@ -5,14 +5,21 @@ level=80
 race=dwarf
 role=spell
 position=ranged_back
-talents=C8DAAAAAAAAAAAAAAAAAAAAAAYGYxCmhZmFDjZGmGzMmZAAAAAAMQAzMTLzyyMAAbGzgxMjZGWMLjZMzwMbzYZmlhBAAAAAAA
+# Mythic+
+talents=C8DAAAAAAAAAAAAAAAAAAAAAAYGMbzCmhZmNDMzw0YmZZGAAAAAAGAwMz0yssMDAwmZmxMDzYmZsMjZGmHw2Mz2MWMAAAAAAAAA
+
+desired_targets=1
+
+optimal_raid=0
+override.arcane_intellect=1
+override.bloodlust=0
 
 # Default consumables
-potion=tempered_potion_3
-flask=flask_of_alchemical_chaos_3
-food=feast_of_the_divine_day
-augmentation=crystallized
-temporary_enchant=main_hand:algari_mana_oil_3
+potion=disabled
+flask=disabled
+food=disabled
+augmentation=disabled
+temporary_enchant=disabled
 
 # This default action priority list is automatically created based on your character.
 # It is a attempt to provide you with a action list that is both simple and practicable,
