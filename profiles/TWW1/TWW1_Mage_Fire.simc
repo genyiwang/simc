@@ -8,6 +8,7 @@ position=ranged_back
 # Mythic+
 talents=C8DAAAAAAAAAAAAAAAAAAAAAAYGMbzCmhZmNDMzw0YmZZGAAAAAAGAwMz0yssMDAwmZmxMDzYmZsMjZGmHw2Mz2MWMAAAAAAAAA
 
+iterations=2000
 desired_targets=1
 
 optimal_raid=0
