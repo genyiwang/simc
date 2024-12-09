@@ -10,7 +10,7 @@ talents=C8DAAAAAAAAAAAAAAAAAAAAAAYGMbzCmhZmNDMzw0YmZZGAAAAAAGAwMz0yssMDAwmZmxMDz
 # Raid
 #talents=C8DAAAAAAAAAAAAAAAAAAAAAAYMMbzCmZmxsYgZGmGzMmBAAAAAgZWmpZmlZBAAAsYMDmZmxMzYxsMGz8AYmlZwswMAAAAAAAA
 
-iterations=2000
+iterations=5000
 desired_targets=1
 
 optimal_raid=0
