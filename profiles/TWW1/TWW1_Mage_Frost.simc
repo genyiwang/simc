@@ -19,10 +19,10 @@ override.bloodlust=0
 
 # Default consumables
 potion=disabled
-flask=disabled
+flask=flask_of_alchemical_chaos_2
 food=disabled
 augmentation=disabled
-temporary_enchant=disabled
+temporary_enchant=main_hand:algari_mana_oil_3
 
 # This default action priority list is automatically created based on your character.
 # It is a attempt to provide you with a action list that is both simple and practicable,
