@@ -507,6 +507,7 @@ public:
     proc_t* flurry_cast;
     proc_t* winters_chill_applied;
     proc_t* winters_chill_consumed;
+    proc_t* winters_chill_expired;
 
     proc_t* icicles_generated;
     proc_t* icicles_fired;
@@ -7518,7 +7519,13 @@ mage_td_t::mage_td_t( player_t* target, mage_t* mage ) :
                                      ->set_default_value_from_effect( 1 )
                                      ->set_chance( mage->talents.glacial_assault.ok() );
   debuffs.touch_of_the_magi      = make_buff<buffs::touch_of_the_magi_t>( this );
-  debuffs.winters_chill          = make_buff( *this, "winters_chill", mage->find_spell( 228358 ) );
+  debuffs.winters_chill          = make_buff( *this, "winters_chill", mage->find_spell( 228358 ) )
+                                     ->set_expire_callback( [ mage ] ( buff_t*, int stacks, timespan_t duration )
+                                       {
+                                         if ( duration != 0_ms ) return;
+                                         for ( int i = 0; i < stacks; i++ )
+                                           mage->procs.winters_chill_expired->occur();
+                                       } );
 }
 
 mage_t::mage_t( sim_t* sim, std::string_view name, race_e r ) :
@@ -8564,6 +8571,7 @@ void mage_t::init_procs()
       procs.flurry_cast                     = get_proc( "Flurry cast" );
       procs.winters_chill_applied           = get_proc( "Winter's Chill stacks applied" );
       procs.winters_chill_consumed          = get_proc( "Winter's Chill stacks consumed" );
+      procs.winters_chill_expired           = get_proc( "Winter's Chill stacks expired" );
 
       procs.icicles_generated  = get_proc( "Icicles generated" );
       procs.icicles_fired      = get_proc( "Icicles fired" );
