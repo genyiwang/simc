@@ -1523,6 +1523,7 @@ class SpellDataGenerator(DataGenerator):
          455521, 455522, 457627, # Woven Dawn Tailoring Set
          449441, # Fury of the Stormrook Set
          469917, 469920, # golem gearbox
+         1217431, 1217432, 1217427, # Zee's Thug Hotline
         ),
 
         # Warrior:

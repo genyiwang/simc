@@ -5129,6 +5129,8 @@ void torqs_big_red_button( special_effect_t& effect )
       : generic_proc_t( e.player, name, spell ), stat_buff( nullptr ), stack_buff( nullptr )
     {
       auto value_spell = e.player->find_spell( 470042 );
+      assert( value_spell && "Torq's Big Red Button missing value spell" );
+
       stat_buff        = create_buff<stat_buff_t>( e.player, e.driver(), e.item )
                       ->add_stat_from_effect( 1, value_spell->effectN( 1 ).average( e ) );
 
@@ -5158,6 +5160,64 @@ void torqs_big_red_button( special_effect_t& effect )
 
   effect.execute_action = create_proc_action<torqs_big_red_button_t>( "torqs_big_red_button", effect,
                                                                       "torqs_big_red_button", effect.driver() );
+}
+
+// House of Cards
+// 466681 Driver
+// 466680 Values
+// 1219158 Stacking Mastery
+void house_of_cards( special_effect_t& effect )
+{
+  auto value_spell = effect.player->find_spell( 466680 );
+  assert( value_spell && "House of Cards missing value spell" );
+
+  auto stacking_buff = create_buff<buff_t>( effect.player, effect.player->find_spell( 1219158 ) );
+
+  effect.player->register_on_combat_state_callback( [ stacking_buff ]( player_t* p, bool c ) {
+    if ( !c && !p->sim->event_mgr.canceled )
+      stacking_buff->expire();
+  } );
+
+  struct house_of_cards_buff_t : public stat_buff_t
+  {
+    double range_min;
+    double range_max;
+    double stack_buff_mod;
+    buff_t* stack_buff;
+
+    house_of_cards_buff_t( player_t* p, std::string_view n, const special_effect_t& e, const spell_data_t* s,
+                           buff_t* stack )
+      : stat_buff_t( p, n, e.driver(), e.item ),
+        range_min( 0 ),
+        range_max( 0 ),
+        stack_buff_mod( 0 ),
+        stack_buff( stack )
+    {
+      add_stat_from_effect_type( A_MOD_RATING, s->effectN( 1 ).average( e ) );
+      default_value  = s->effectN( 1 ).average( e );
+      range_min      = 1.0 - ( s->effectN( 2 ).base_value() / 100 );
+      range_max      = 1.0 + ( s->effectN( 2 ).base_value() / 100 );
+      stack_buff_mod = default_value * ( s->effectN( 2 ).base_value() / 100 / 3 );
+    }
+
+    double randomize_stat_value()
+    {
+      double v = default_value * rng().range( range_min, range_max );
+      if ( stack_buff->check() )
+        v += stack_buff_mod * stack_buff->check();
+
+      return v;
+    }
+
+    void start( int s, double, timespan_t d ) override
+    {
+      stat_buff_t::start( s, randomize_stat_value(), d );
+      stack_buff->trigger();
+    }
+  };
+
+  effect.custom_buff =
+      create_buff<house_of_cards_buff_t>( effect.player, "house_of_cards", effect, value_spell, stacking_buff );
 }
 
 // Weapons
@@ -7434,6 +7494,7 @@ void register_special_effects()
   register_special_effect( 468033, items::runecasters_stormbound_rune );
   register_special_effect( 468034, items::darktide_wavebenders_orb );
   register_special_effect( 470286, items::torqs_big_red_button );
+  register_special_effect( 466681, items::house_of_cards );
 
   // Weapons
   register_special_effect( 443384, items::fateweaved_needle );
