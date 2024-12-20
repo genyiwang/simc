@@ -5081,6 +5081,85 @@ void darktide_wavebenders_orb( special_effect_t& effect )
   new dbc_proc_callback_t( effect.player, effect );
 }
 
+// Torq's Big Red Button
+// 470042 Values
+// 470286 Driver & Stat Buff
+// 472787 Stacking Buff
+// 472784 Damage
+void torqs_big_red_button( special_effect_t& effect )
+{
+  if ( !effect.player->is_ptr() )
+    return;
+
+  struct spiteful_zapbolt_t : public generic_proc_t
+  {
+    buff_t* stack_buff;
+    const spell_data_t* value_spell;
+
+    spiteful_zapbolt_t( const special_effect_t& e, buff_t* b, const spell_data_t* value )
+      : generic_proc_t( e, "spiteful_zapbolt", 472784 ), stack_buff( b ), value_spell( value )
+    {
+      base_dd_min = base_dd_max = value_spell->effectN( 2 ).average( e );
+      base_multiplier *= role_mult( e );
+    }
+
+    double composite_da_multiplier( const action_state_t* s ) const override
+    {
+      double v = generic_proc_t::composite_da_multiplier( s );
+
+      // TODO: Double Check this formula is correct once this is testable. Might carry over to the next use?
+      v *= 1.0 + ( ( stack_buff->max_stack() - stack_buff->stack() ) * value_spell->effectN( 3 ).percent() );
+
+      return v;
+    }
+
+    void execute() override
+    {
+      generic_proc_t::execute();
+      stack_buff->decrement();
+    }
+  };
+
+  struct torqs_big_red_button_t : public generic_proc_t
+  {
+    buff_t* stat_buff;
+    buff_t* stack_buff;
+
+    torqs_big_red_button_t( const special_effect_t& e, std::string_view name, const spell_data_t* spell )
+      : generic_proc_t( e.player, name, spell ), stat_buff( nullptr ), stack_buff( nullptr )
+    {
+      auto value_spell = e.player->find_spell( 470042 );
+      stat_buff        = create_buff<stat_buff_t>( e.player, e.driver(), e.item )
+                      ->add_stat_from_effect( 1, value_spell->effectN( 1 ).average( e ) );
+
+      stack_buff = create_buff<buff_t>( e.player, e.player->find_spell( 472787 ) )->set_reverse( true );
+
+      auto damage = create_proc_action<spiteful_zapbolt_t>( "spiteful_zapbolt", e, stack_buff, value_spell );
+
+      add_child( damage );
+
+      auto on_next            = new special_effect_t( e.player );
+      on_next->name_str       = stack_buff->name();
+      on_next->spell_id       = stack_buff->data().id();
+      on_next->execute_action = damage;
+      e.player->special_effects.push_back( on_next );
+
+      auto cb = new dbc_proc_callback_t( e.player, *on_next );
+      cb->activate_with_buff( stack_buff );
+    }
+
+    void execute() override
+    {
+      generic_proc_t::execute();
+      stat_buff->trigger();
+      stack_buff->trigger();
+    }
+  };
+
+  effect.execute_action = create_proc_action<torqs_big_red_button_t>( "torqs_big_red_button", effect,
+                                                                      "torqs_big_red_button", effect.driver() );
+}
+
 // Weapons
 // 443384 driver
 // 443585 damage
@@ -5350,6 +5429,131 @@ void force_of_magma( special_effect_t& effect )
 
   effect.execute_action = damage;
   new dbc_proc_callback_t( effect.player, effect );
+}
+
+// Vile Contamination
+// 471316 Driver
+// 473602 DoT
+void vile_contamination( special_effect_t& effect )
+{
+  if ( !effect.player->is_ptr() )
+    return;
+
+  auto dot     = create_proc_action<generic_proc_t>( "vile_contamination", effect, effect.trigger() );
+  dot->base_td = effect.driver()->effectN( 1 ).average( effect );
+  // Setting a reasonably high non 0 duration so the DoT works as expected. Data contains no duration resulting in it
+  // never applying.
+  dot->dot_duration = 300_s;
+
+  effect.execute_action = dot;
+  new dbc_proc_callback_t( effect.player, effect );
+}
+
+// Best-in-Slots
+// 473402 Use Driver & On Use Stat buff
+// 471063 Equip Driver & Values
+// 473492 Proc Stat Buff
+void best_in_slots( special_effect_t& effect )
+{
+  if ( !effect.player->is_ptr() )
+    return;
+
+  auto equip_driver = effect.player->find_spell( 471063 );
+  assert( equip_driver && "Best-in-Slots missing equip driver" );
+
+  struct best_in_slots_stat_buff_t : stat_buff_t
+  {
+    double range_min;
+    double range_max;
+
+    best_in_slots_stat_buff_t( const special_effect_t& e, util::string_view name, const spell_data_t* s,
+                               const item_t* item = nullptr )
+      : stat_buff_t( e.player, name, s, item ), range_min( 0 ), range_max( 0 )
+    {
+      auto equip_driver = e.player->find_spell( 471063 );
+      auto mod          = equip_driver->effectN( 2 ).base_value() / 100;
+      range_min         = 1 - mod;
+      range_max         = 1 + mod;
+    }
+
+    double randomize_stat_value()
+    {
+      return default_value * rng().range( range_min, range_max );
+    }
+
+    void start( int s, double, timespan_t d ) override
+    {
+      stat_buff_t::start( s, randomize_stat_value(), d );
+    }
+
+    void bump( int stacks, double ) override
+    {
+      buff_t::bump( stacks, randomize_stat_value() );
+    }
+  };
+
+  struct best_in_slots_cb_t : public dbc_proc_callback_t
+  {
+    std::unordered_map<stat_e, buff_t*> buffs;
+
+    best_in_slots_cb_t( const special_effect_t& equip, const special_effect_t& use, const spell_data_t* equip_driver )
+      : dbc_proc_callback_t( equip.player, equip ), buffs()
+    {
+      auto buff_value      = equip_driver->effectN( 1 ).average( use );
+      auto proc_buff_spell = equip.player->find_spell( 473492 );
+
+      create_all_stat_buffs<best_in_slots_stat_buff_t>( equip, proc_buff_spell, buff_value,
+                                                        [ &, buff_value ]( stat_e s, buff_t* b ) {
+                                                          b->default_value = buff_value;
+                                                          buffs[ s ]       = b;
+                                                        } );
+    }
+
+    void execute( action_t*, action_state_t* ) override
+    {
+      auto buff = buffs.at( rng().range( secondary_ratings ) );
+      if ( !buff->check() )
+      {
+        range::for_each( buffs, []( auto& b ) { b.second->expire(); } );
+      }
+      buff->trigger();
+    }
+  };
+
+  auto equip      = new special_effect_t( effect.player );
+  equip->name_str = equip_driver->name_cstr();
+  equip->spell_id = equip_driver->id();
+  effect.player->special_effects.push_back( equip );
+
+  auto cb = new best_in_slots_cb_t( *equip, effect, equip_driver );
+  cb->initialize();
+  cb->activate();
+
+  struct cheating_t : public generic_proc_t
+  {
+    std::unordered_map<stat_e, buff_t*> buffs;
+
+    cheating_t( const special_effect_t& e, const spell_data_t* equip_driver )
+      : generic_proc_t( e, "cheating", e.driver() ), buffs()
+    {
+      auto value_mod  = 1 + ( equip_driver->effectN( 2 ).base_value() / 100 );
+      auto buff_value = equip_driver->effectN( 1 ).average( e ) * value_mod;
+
+      create_all_stat_buffs( e, e.driver(), buff_value, [ &, buff_value ]( stat_e s, buff_t* b ) {
+        b->default_value = buff_value;
+        buffs[ s ]       = b;
+      } );
+    }
+
+    void execute() override
+    {
+      generic_proc_t::execute();
+      buffs.at( util::highest_stat( player, secondary_ratings ) )->trigger();
+    }
+  };
+
+  effect.spell_id       = 473402;
+  effect.execute_action = create_proc_action<cheating_t>( "cheating", effect, equip_driver );
 }
 
 // Armor
@@ -7229,6 +7433,7 @@ void register_special_effects()
   register_special_effect( 468035, items::cursed_pirate_skull );
   register_special_effect( 468033, items::runecasters_stormbound_rune );
   register_special_effect( 468034, items::darktide_wavebenders_orb );
+  register_special_effect( 470286, items::torqs_big_red_button );
 
   // Weapons
   register_special_effect( 443384, items::fateweaved_needle );
@@ -7238,6 +7443,9 @@ void register_special_effects()
   register_special_effect( 469936, items::guiding_stave_of_wisdom );
   register_special_effect( 470641, items::flame_wrath );
   register_special_effect( 470647, items::force_of_magma );
+  register_special_effect( 471316, items::vile_contamination );
+  register_special_effect( { 473400, 473401 }, items::best_in_slots );
+  register_special_effect( 471063, DISABLED_EFFECT );  // best in slots equip driver
 
   // Armor
   register_special_effect( 457815, items::seal_of_the_poisoned_pact );
