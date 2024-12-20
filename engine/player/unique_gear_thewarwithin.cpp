@@ -5168,6 +5168,9 @@ void torqs_big_red_button( special_effect_t& effect )
 // 1219158 Stacking Mastery
 void house_of_cards( special_effect_t& effect )
 {
+  if ( !effect.player->is_ptr() )
+    return;
+
   auto value_spell = effect.player->find_spell( 466680 );
   assert( value_spell && "House of Cards missing value spell" );
 
