@@ -2011,7 +2011,6 @@ class SpellDataGenerator(DataGenerator):
           ( 470058, 0 ),                                # Voltaic Blaze override buff
           ( 467283, 0 ),                                # Reactivity proc
           ( 408390, 0 ),                                # Elemental Weapons actual
-          (1218612, 0 ),                                # Jackpot TWW2 4-set
         ),
 
         # Mage:
