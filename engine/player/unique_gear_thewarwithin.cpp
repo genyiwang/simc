@@ -6483,10 +6483,20 @@ struct absorb_citrine_t : citrine_base_t<absorb_t>
     {
       target                = player;
       target_cache.is_valid = false;
-      target = rng().range( target_list() );
+      target                = rng().range( target_list() );
     }
 
     citrine_base_t::execute();
+  }
+
+  absorb_buff_t* create_buff( const action_state_t* s ) override
+  {
+    absorb_buff_t* b = absorb_t::create_buff( s );
+
+    if ( s->target->is_pet() )
+      b->set_quiet( true );
+
+    return b;
   }
 };
 
