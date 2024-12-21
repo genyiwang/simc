@@ -4605,13 +4605,16 @@ struct execute_arms_t : public warrior_attack_t
       p() -> buff.fervid -> trigger( 1, buff_t::DEFAULT_VALUE(), 0.25 );
     }
 
-    if ( p()->talents.colossus.colossal_might->ok() )
+    if ( !player->is_ptr() )
     {
-      if ( p()->talents.colossus.dominance_of_the_colossus->ok() && p()->buff.colossal_might->at_max_stacks() )
+      if ( p()->talents.colossus.colossal_might->ok() )
       {
-        p()->cooldown.demolish->adjust( - timespan_t::from_seconds( p()->talents.colossus.dominance_of_the_colossus->effectN( 2 ).base_value() ) );
+        if ( p()->talents.colossus.dominance_of_the_colossus->ok() && p()->buff.colossal_might->at_max_stacks() )
+        {
+          p()->cooldown.demolish->adjust( - timespan_t::from_seconds( p()->talents.colossus.dominance_of_the_colossus->effectN( 2 ).base_value() ) );
+        }
+        p()->buff.colossal_might->trigger();
       }
-      p()->buff.colossal_might->trigger();
     }
   }
 
