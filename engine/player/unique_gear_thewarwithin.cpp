@@ -6591,7 +6591,7 @@ struct storm_sewers_citrine_t : public absorb_citrine_t
           break;
         }
       }
-      if ( potential_target && potential_target->is_enemy() && !potential_target->is_sleeping() )
+      if ( potential_target && potential_target->is_enemy() && !potential_target->is_sleeping() && !potential_target->is_pet() )
       {
         damage->execute_on_target( potential_target, s->result_amount * driver_spell->effectN( 3 ).percent() );
       }
