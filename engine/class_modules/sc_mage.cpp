@@ -470,6 +470,7 @@ public:
     unsigned initial_spellfire_spheres = 5;
     arcane_phoenix_rotation arcane_phoenix_rotation_override = arcane_phoenix_rotation::DEFAULT;
     bool ice_nova_consumes_winters_chill = true;
+    bool fof_ice_lance_consumes_winters_chill = true;
   } options;
 
   // Pets
@@ -3150,21 +3151,24 @@ struct frost_mage_spell_t : public mage_spell_t
 
     unsigned frozen = cast_state( s )->frozen;
 
-    if ( frozen & FF_WINTERS_CHILL )
+    if ( frozen & FF_FINGERS_OF_FROST )
+      source->occur( FROZEN_FINGERS_OF_FROST );
+    else if ( frozen & FF_WINTERS_CHILL )
       source->occur( FROZEN_WINTERS_CHILL );
     else if ( frozen & FF_ROOT )
       source->occur( FROZEN_ROOT );
-    else if ( frozen & FF_FINGERS_OF_FROST )
-      source->occur( FROZEN_FINGERS_OF_FROST );
     else
       source->occur( FROZEN_NONE );
   }
+
+  virtual bool should_consume_winters_chill( const action_state_t* s, bool execute = false ) const
+  { return consumes_winters_chill; }
 
   void execute() override
   {
     mage_spell_t::execute();
 
-    if ( !background && consumes_winters_chill )
+    if ( !background && execute_state && should_consume_winters_chill( execute_state, true ) )
       p()->expression_support.remaining_winters_chill = std::max( p()->expression_support.remaining_winters_chill - 1, 0 );
   }
 
@@ -3182,7 +3186,7 @@ struct frost_mage_spell_t : public mage_spell_t
 
       if ( auto td = find_td( s->target ) )
       {
-        if ( consumes_winters_chill && td->debuffs.winters_chill->check() )
+        if ( td->debuffs.winters_chill->check() && should_consume_winters_chill( s ) )
         {
           td->debuffs.winters_chill->decrement();
           p()->trigger_splinter( s->target );
@@ -5452,6 +5456,18 @@ struct ice_lance_t final : public custom_state_spell_t<frost_mage_spell_t, ice_l
     return source;
   }
 
+  bool should_consume_winters_chill( const action_state_t* s, bool execute = false ) const override
+  {
+    if ( !p()->options.fof_ice_lance_consumes_winters_chill )
+    {
+      // mage_spell_state_t::frozen isn't available during execute, use ice_lance_data_t::fingers_of_frost instead.
+      if ( ( execute && cast_state( s )->data.fingers_of_frost ) || ( !execute && cast_state( s )->frozen & FF_FINGERS_OF_FROST ) )
+        return false;
+    }
+
+    return custom_state_spell_t::should_consume_winters_chill( s, execute );
+  }
+
   void schedule_travel( action_state_t* s ) override
   {
     custom_state_spell_t::schedule_travel( s );
@@ -5510,7 +5526,8 @@ struct ice_lance_t final : public custom_state_spell_t<frost_mage_spell_t, ice_l
         record_shatter_source( s, extension_source );
       }
 
-      if ( frozen &  FF_FINGERS_OF_FROST
+      if ( p()->options.fof_ice_lance_consumes_winters_chill
+        && frozen &  FF_FINGERS_OF_FROST
         && frozen & ~FF_FINGERS_OF_FROST )
       {
         p()->procs.fingers_of_frost_wasted->occur();
@@ -5530,6 +5547,11 @@ struct ice_lance_t final : public custom_state_spell_t<frost_mage_spell_t, ice_l
 
     if ( frozen & FF_FINGERS_OF_FROST && frigid_pulse )
       frigid_pulse->execute_on_target( s->target );
+
+    // Trigger splinter only if the Ice Lance didn't attempt to consume Winter's Chill.
+    // TODO: figure out what happens when IL cleaves
+    if ( !should_consume_winters_chill( s ) )
+      p()->trigger_splinter( s->target );
   }
 
   double action_multiplier() const override
@@ -7768,6 +7790,7 @@ void mage_t::create_options()
                 return true;
               } ) );
   add_option( opt_bool( "mage.ice_nova_consumes_winters_chill", options.ice_nova_consumes_winters_chill ) );
+  add_option( opt_bool( "mage.fof_ice_lance_consumes_winters_chill", options.fof_ice_lance_consumes_winters_chill ) );
 
   player_t::create_options();
 }
