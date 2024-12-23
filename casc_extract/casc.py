@@ -749,6 +749,17 @@ class CDNIndex(CASCObject):
             self.write_cache(path, handle)
 
     def open_build_cfg(self):
+        if self.options.custom_build is not None:
+            with open(self.options.custom_build, 'rb') as f:
+                self.builds.append(BuildCfg(f))
+            match = re.match(r'WOW-(\d+)patch(\d+\.\d+\.\d+)', self.get_build_cfg().build_name)
+            if match:
+                self.build_number = int(match.group(1))
+                self.version = '{}.{}'.format(match.group(2), self.build_number)
+                print('Custom build version: %s [%d]' %
+                      (self.version, self.build_number))
+            else:
+                self.options.parser.error('Unable to load version from custom build')
         for cfg in self.build_cfg_hash:
             path = os.path.join(self.cache_dir('config'), cfg)
             url = self.cdn_url('config', cfg)
