@@ -4956,7 +4956,10 @@ void wayward_vrykuls_lantern( special_effect_t& effect )
     {
       for ( auto& s : e.player->dbc->spells_by_label( 690 ) )
         if ( s->is_class( e.player->type ) )
+        {
           proc_spell_id.insert( s->id() );
+          e.player->sim->print_debug( "Wayward Vrykul's can Proc off of Spell: %s: %d\n", s->name_cstr(), s->id() );
+        }
 
       buff = create_buff<stat_buff_t>( e.player, e.trigger(), e.item )
                  ->add_stat_from_effect_type( A_MOD_RATING, e.driver()->effectN( 1 ).average( e ) );
@@ -5003,6 +5006,8 @@ void wayward_vrykuls_lantern( special_effect_t& effect )
       last_activation_time = timespan_t::zero();
     }
   };
+
+  effect.proc_flags2_ = PF2_ALL_CAST;
 
   new wayward_vrykuls_lantern_cb_t( effect );
 }
