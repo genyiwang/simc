@@ -1331,7 +1331,19 @@ struct dark_ascension_t final : public priest_spell_t
     if ( p().is_ptr() && p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
     {
       if ( p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B4 ) )
-        player->buffs.power_infusion->extend_duration_or_trigger( tww2_pi_proc_duration );
+      {
+        if ( player->buffs.power_infusion->check() )
+        {
+          player->buffs.power_infusion->extend_duration( player, tww2_pi_proc_duration );
+        }
+        else
+        {
+          player->buffs.power_infusion->trigger( 1,
+                                                 player->buffs.power_infusion->default_value +
+                                                     p().talents.archon.concentrated_infusion->effectN( 1 ).percent(),
+                                                 -1, tww2_pi_proc_duration );
+        }
+      }
 
       auto action_state               = void_bolt_damage_action->get_state();
       action_state->target            = target;
@@ -1418,7 +1430,19 @@ struct void_eruption_t final : public priest_spell_t
     if ( p().is_ptr() && p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
     {
       if ( p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B4 ) )
-        player->buffs.power_infusion->extend_duration_or_trigger( tww2_pi_proc_duration );
+      {
+        if ( player->buffs.power_infusion->check() )
+        {
+          player->buffs.power_infusion->extend_duration( player, tww2_pi_proc_duration );
+        }
+        else
+        {
+          player->buffs.power_infusion->trigger( 1,
+                                                 player->buffs.power_infusion->default_value +
+                                                     p().talents.archon.concentrated_infusion->effectN( 1 ).percent(),
+                                                 -1, tww2_pi_proc_duration );
+        }
+      }
 
       auto action_state               = void_bolt_damage_action->get_state();
       action_state->target            = target;
@@ -2559,13 +2583,16 @@ void priest_t::init_special_effects_shadow()
       double tww2_voidbolt_modifier;
       bool has_tww2_4pc;
       timespan_t tww2_pi_proc_duration;
+      double power_infusion_value;
 
       shadow_tww2_2pc( priest_t* p, const special_effect_t& e )
         : dbc_proc_callback_t( p, e ),
           void_bolt_damage_action( nullptr ),
           tww2_voidbolt_modifier( p->sets->set( PRIEST_SHADOW, TWW2, B2 )->effectN( 1 ).percent() ),
           has_tww2_4pc( p->sets->has_set_bonus( PRIEST_SHADOW, TWW2, B4 ) ),
-          tww2_pi_proc_duration( p->sets->set( PRIEST_SHADOW, TWW2, B4 )->effectN( 1 ).time_value() )
+          tww2_pi_proc_duration( p->sets->set( PRIEST_SHADOW, TWW2, B4 )->effectN( 1 ).time_value() ),
+          power_infusion_value( listener->buffs.power_infusion->default_value +
+                                p->talents.archon.concentrated_infusion->effectN( 1 ).percent() )
       {
         allow_pet_procs = false;
         initialize();
@@ -2590,7 +2617,16 @@ void priest_t::init_special_effects_shadow()
         if ( da > 0 )
         {
           if ( has_tww2_4pc )
-            listener->buffs.power_infusion->extend_duration_or_trigger( tww2_pi_proc_duration );
+          {
+            if ( listener->buffs.power_infusion->check() )
+            {
+              listener->buffs.power_infusion->extend_duration( listener, tww2_pi_proc_duration );
+            }
+            else
+            {
+              listener->buffs.power_infusion->trigger( 1, power_infusion_value, -1, tww2_pi_proc_duration );
+            }
+          }
 
           auto action_state     = void_bolt_damage_action->get_state();
           action_state->target  = s->target;
