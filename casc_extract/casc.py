@@ -760,6 +760,7 @@ class CDNIndex(CASCObject):
                       (self.version, self.build_number))
             else:
                 self.options.parser.error('Unable to load version from custom build')
+            return
         for cfg in self.build_cfg_hash:
             path = os.path.join(self.cache_dir('config'), cfg)
             url = self.cdn_url('config', cfg)
