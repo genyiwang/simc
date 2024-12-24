@@ -1869,13 +1869,19 @@ public:
         // TODO(mserrano): get this from spell data
         if ( p->talents.crusade->ok() )
         {
+          if ( !p->buffs.crusade->up() )
+          {
+            p->active.background_crusade->execute_on_target( p );
+          }
           p->buffs.crusade->extend_duration_or_trigger( timespan_t::from_seconds( 5 ) );
-          p->active.background_crusade->execute_on_target( p );
         }
         else if ( p->talents.avenging_wrath->ok() )
         {
+          if ( !p->buffs.avenging_wrath->up() )
+          {
+            p->active.background_avenging_wrath->execute_on_target( p );
+          }
           p->buffs.avenging_wrath->extend_duration_or_trigger( timespan_t::from_seconds( 4 ) );
-          p->active.background_avenging_wrath->execute_on_target( p );
         }
         p->radiant_glory_accumulator -= 1.0;
 

@@ -1187,14 +1187,20 @@ struct wake_of_ashes_t : public paladin_spell_t
       bool do_avatar = p()->talents.herald_of_the_sun.suns_avatar->ok() && !( p()->buffs.avenging_wrath->up() || p()->buffs.crusade->up() );
       if ( p()->talents.crusade->ok() )
       {
+        if ( !p()->buffs.crusade->up() )
+        {
+          p()->active.background_crusade->execute_on_target( p() );
+        }
         // TODO: get this from spell data
         p()->buffs.crusade->extend_duration_or_trigger( timespan_t::from_seconds( 10 ) );
-        p()->active.background_crusade->execute_on_target( p() );
       }
       else if ( p()->talents.avenging_wrath->ok() )
       {
+        if ( !p()->buffs.avenging_wrath->up() )
+        {
+          p()->active.background_avenging_wrath->execute_on_target( p() );
+        }
         p()->buffs.avenging_wrath->extend_duration_or_trigger( timespan_t::from_seconds( 8 ) );
-        p()->active.background_avenging_wrath->execute_on_target( p() );
       }
 
       if ( do_avatar )
