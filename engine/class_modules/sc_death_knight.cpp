@@ -8979,6 +8979,17 @@ struct frostscythe_proc_t : public frostscythe_base_t
     cooldown->duration = 0_ms;  // Override Spell data as this is a proc
   }
 
+  void init_finished() override
+  {
+    death_knight_melee_attack_t::init_finished();
+    // Override this here so our auto parsing doesn't mess with it
+    // PTR TODO: Might need to be removed once testing is possible, this assumes it can't
+    // proc effects based off rune spending
+    base_costs[ RESOURCE_RUNE ] = 0;
+    // Also assume it doesnt generate runic power.
+    energize_amount             = 0;
+  }
+
   double cost() const override
   {
     // Procs are free
