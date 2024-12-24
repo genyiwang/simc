@@ -769,6 +769,7 @@ public:
     buff_t* cryogenic_chamber;
     // Tier Sets
     propagate_const<buff_t*> icy_vigor;
+    propagate_const<buff_t*> winning_streak_frost;
 
     // Unholy
     propagate_const<buff_t*> dark_transformation;
@@ -917,6 +918,7 @@ public:
     action_t* chill_streak_damage;
     propagate_const<action_t*> icy_death_torrent_damage;
     action_t* hyperpyrexia_damage;
+    propagate_const<action_t*> frostscythe_proc;
 
     // Unholy
     propagate_const<action_t*> bursting_sores;
@@ -1407,6 +1409,8 @@ public:
     const spell_data_t* hyperpyrexia_damage;
     // Tier Sets
     const spell_data_t* icy_vigor;
+    const spell_data_t* winning_streak_frost;
+    const spell_data_t* winning_streak_frostscythe;
 
     // Unholy
     const spell_data_t* runic_corruption;  // buff
@@ -1556,6 +1560,8 @@ public:
     real_ppm_t* blood_beast;
     real_ppm_t* tww1_fdk_4pc;
     real_ppm_t* tww2_unh_2pc;
+    real_ppm_t* tww2_fdk_2pc;
+    real_ppm_t* tww2_frostscythe;
   } rppm;
 
   // Pets and Guardians
@@ -4800,6 +4806,9 @@ struct death_knight_action_t : public parse_action_effects_t<Base>
 
     if ( p()->is_ptr() && p()->sets->has_set_bonus( DEATH_KNIGHT_UNHOLY, TWW2, B2 ) && p()->rppm.tww2_unh_2pc->trigger() )
       p()->buffs.winning_streak_unholy->trigger();
+
+    if( p()->is_ptr() && p()->sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW2, B2 ) && p()->rppm.tww2_fdk_2pc->trigger() )
+      p()->buffs.winning_streak_frost->trigger();
   }
 
   void impact( action_state_t* s ) override
@@ -8907,13 +8916,11 @@ private:
 
 // Frostscythe ==============================================================
 
-struct frostscythe_t final : public death_knight_melee_attack_t
+struct frostscythe_base_t : public death_knight_melee_attack_t
 {
-  frostscythe_t( death_knight_t* p, std::string_view options_str )
-    : death_knight_melee_attack_t( "frostscythe", p, p->talent.frost.frostscythe )
+  frostscythe_base_t( std::string_view n, death_knight_t* p, const spell_data_t* s )
+    : death_knight_melee_attack_t( n, p, s )
   {
-    parse_options( options_str );
-
     inexorable_assault = get_action<inexorable_assault_damage_t>( "inexorable_assault", p );
 
     weapon              = &( player->main_hand_weapon );
@@ -8952,6 +8959,31 @@ struct frostscythe_t final : public death_knight_melee_attack_t
 
 private:
   propagate_const<action_t*> inexorable_assault;
+};
+
+struct frostscythe_t : public frostscythe_base_t
+{
+  frostscythe_t( death_knight_t* p, std::string_view options_str )
+    : frostscythe_base_t( "frostscythe", p, p->talent.frost.frostscythe )
+  {
+    parse_options( options_str );
+  }
+};
+
+struct frostscythe_proc_t : public frostscythe_base_t
+{
+  frostscythe_proc_t( util::string_view n, death_knight_t* p ) : frostscythe_base_t( n, p, p->find_spell( 207230 ) )
+  {
+    background         = true;
+    base_multiplier    = p->sets->set( DEATH_KNIGHT_FROST, TWW2, B4 )->effectN( 3 ).percent();
+    cooldown->duration = 0_ms;  // Override Spell data as this is a proc
+  }
+
+  double cost() const override
+  {
+    // Procs are free
+    return 0;
+  }
 };
 
 // Frostwyrm's Fury =========================================================
@@ -9162,6 +9194,12 @@ struct frost_strike_t final : public death_knight_melee_attack_t
                              p()->gains.obliteration );
       }
     }
+
+    if ( p()->is_ptr() && p()->sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW2, B4 ) &&
+         p()->buffs.winning_streak_frost->check() && p()->rppm.tww2_frostscythe->trigger() )
+    {
+      p()->active_spells.frostscythe_proc->execute();
+    }
   }
 
 private:
@@ -9214,6 +9252,12 @@ struct glacial_advance_damage_t final : public death_knight_spell_t
       if ( p()->sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW1, B4 ) && p()->rppm.tww1_fdk_4pc->trigger() )
       {
         p()->buffs.icy_vigor->trigger();
+      }
+
+      if ( p()->is_ptr() && p()->sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW2, B4 ) &&
+           p()->buffs.winning_streak_frost->check() && p()->rppm.tww2_frostscythe->trigger() )
+      {
+        p()->active_spells.frostscythe_proc->execute();
       }
     }
   }
@@ -9929,6 +9973,12 @@ struct obliterate_t final : public death_knight_melee_attack_t
         make_event<delayed_execute_event_t>( *sim, p(), p()->buffs.killing_machine->check() ? km_oh : oh, execute_state->target, oh_delay );
 
       p()->buffs.rime->trigger();
+    }
+
+    if ( p()->is_ptr() && p()->sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW2, B2 ) &&
+         rng().roll( p()->sets->set( DEATH_KNIGHT_FROST, TWW2, B2 )->effectN( 1 ).percent() ) )
+    {
+      p()->buffs.winning_streak_frost->expire();
     }
 
     if ( p()->buffs.exterminate->up() )
@@ -12430,6 +12480,11 @@ void death_knight_t::create_actions()
     {
       active_spells.chill_streak_damage = get_action<chill_streak_damage_t>( "chill_streak_damage", this );
     }
+
+    if ( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW2, B4 ) )
+    {
+      active_spells.frostscythe_proc = get_action<frostscythe_proc_t>( "frostscythe_proc", this );
+    }
   }
 
   player_t::create_actions();
@@ -12898,6 +12953,8 @@ void death_knight_t::init_rng()
   rppm.blood_beast       = get_rppm( "blood_beast", talent.sanlayn.the_blood_is_life );
   rppm.tww1_fdk_4pc      = get_rppm( "tww1_fdk_4pc", sets->set( DEATH_KNIGHT_FROST, TWW1, B4 ) );
   rppm.tww2_unh_2pc      = get_rppm( "tww2_unh_2pc", sets->set( DEATH_KNIGHT_UNHOLY, TWW2, B2 ) );
+  rppm.tww2_fdk_2pc      = get_rppm( "tww2_fdk_2pc", sets->set( DEATH_KNIGHT_FROST, TWW2, B2 ) );
+  rppm.tww2_frostscythe  = get_rppm( "tww2_frostscythe", spell.winning_streak_frostscythe );
 }
 
 // death_knight_t::init_base ================================================
@@ -13360,6 +13417,10 @@ void death_knight_t::spell_lookups()
   spell.hyperpyrexia_damage      = conditional_spell_lookup( talent.frost.hyperpyrexia.ok(), 458169 );
   // Tier Sets
   spell.icy_vigor = conditional_spell_lookup( sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW1, B4 ), 457189 );
+  spell.winning_streak_frost =
+      conditional_spell_lookup( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW2, B2 ), 1217897 );
+  spell.winning_streak_frostscythe =
+      conditional_spell_lookup( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW2, B4 ), 1217956 );
 
   // Unholy
   spell.runic_corruption_chance        = conditional_spell_lookup( spec.unholy_death_knight->ok(), 51462 );
@@ -14163,6 +14224,10 @@ void death_knight_t::create_buffs()
   buffs.icy_vigor =
       make_fallback( sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW1, B4 ), this, "icy_vigor", spell.icy_vigor );
 
+  buffs.winning_streak_frost = make_fallback( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW2, B2 ), this,
+                                              "winning_streak", spell.winning_streak_frost )
+                                   ->set_chance( 1.01 );
+
   // Unholy
   buffs.dark_transformation = make_fallback<dark_transformation_buff_t>(
       talent.unholy.dark_transformation.ok(), this, "dark_transformation", talent.unholy.dark_transformation );
@@ -14222,12 +14287,9 @@ void death_knight_t::create_buffs()
   buffs.unholy_commander = make_fallback( sets->has_set_bonus( DEATH_KNIGHT_UNHOLY, TWW1, B4 ), this,
                                           "unholy_commander", spell.unholy_commander );
 
-  if ( is_ptr() )
-  {
-    buffs.winning_streak_unholy = make_fallback( sets->has_set_bonus( DEATH_KNIGHT_UNHOLY, TWW2, B2 ), this,
+    buffs.winning_streak_unholy = make_fallback( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_UNHOLY, TWW2, B2 ), this,
                                                  "winning_streak", spell.winning_streak_unholy )
                                       ->set_chance( 1.01 );
-  }
 }
 
 // death_knight_t::init_gains ===============================================
@@ -14899,6 +14961,7 @@ void death_knight_action_t<Base>::apply_action_effects()
   parse_effects( p()->buffs.killing_machine );
   parse_effects( p()->mastery.frozen_heart );
   parse_effects( p()->talent.frost.smothering_offense );
+  parse_effects( p()->buffs.winning_streak_frost, p()->sets->set( DEATH_KNIGHT_FROST, TWW2, B4 ) );
 
   // Unholy
   parse_effects( p()->buffs.unholy_assault );
@@ -15085,6 +15148,7 @@ void death_knight_t::apply_affecting_auras( buff_t& buff )
 
   // Frost
   buff.apply_affecting_aura( talent.frost.smothering_offense );
+  buff.apply_affecting_aura( sets->set( DEATH_KNIGHT_FROST, TWW2, B4 ) );
 
   // Unholy
   buff.apply_affecting_aura( talent.unholy.harbinger_of_doom );
