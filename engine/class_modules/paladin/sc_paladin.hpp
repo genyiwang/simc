@@ -150,6 +150,9 @@ public:
     action_t* sacred_weapon_proc_heal;
     action_t* refining_fire;
     action_t* eye_for_an_eye;
+
+    action_t* background_avenging_wrath;
+    action_t* background_crusade;
   } active;
 
   // Buffs
@@ -1867,10 +1870,12 @@ public:
         if ( p->talents.crusade->ok() )
         {
           p->buffs.crusade->extend_duration_or_trigger( timespan_t::from_seconds( 5 ) );
+          p->active.background_crusade->execute_on_target( p );
         }
         else if ( p->talents.avenging_wrath->ok() )
         {
           p->buffs.avenging_wrath->extend_duration_or_trigger( timespan_t::from_seconds( 4 ) );
+          p->active.background_avenging_wrath->execute_on_target( p );
         }
         p->radiant_glory_accumulator -= 1.0;
 
@@ -2038,8 +2043,11 @@ struct delayed_execute_event_t : public event_t
 
 struct avenging_wrath_t : public paladin_spell_t
 {
+  bool is_proc_background;
+  avenging_wrath_t( paladin_t* p );
   avenging_wrath_t( paladin_t* p, util::string_view options_str );
   void execute() override;
+  action_state_t* new_state() override;
 };
 
 struct judgment_t : public paladin_melee_attack_t

@@ -44,10 +44,30 @@ namespace buffs {
 // Crusade
 struct crusade_t : public paladin_spell_t
 {
+  struct state_t : public action_state_t
+  {
+    using action_state_t::action_state_t;
+
+    proc_types2 cast_proc_type2() const override
+    {
+      // This spell can trigger on-cast procs even if it is backgrounded
+      return PROC2_CAST_GENERIC;
+    }
+  };
+
+  bool is_proc_background;
+
+  crusade_t( paladin_t* p ) : paladin_spell_t( "crusade", p, p->find_spell( 454373 ) )
+  {
+    is_proc_background = true;
+  }
+
   crusade_t( paladin_t* p, util::string_view options_str ) :
     paladin_spell_t( "crusade", p, p->spells.crusade )
   {
     parse_options( options_str );
+
+    is_proc_background = false;
 
     if ( ! ( p->talents.crusade->ok() ) )
       background = true;
@@ -55,9 +75,17 @@ struct crusade_t : public paladin_spell_t
       background = true;
   }
 
+  action_state_t* new_state() override
+  {
+    return new state_t( this, target );
+  }
+
   void execute() override
   {
     paladin_spell_t::execute();
+
+    if ( is_proc_background )
+      return;
 
     // If Visions already procced the buff and this spell is used, all stacks are reset to 1
     // The duration is also set to its default value, there's no extending or pandemic
@@ -1161,10 +1189,12 @@ struct wake_of_ashes_t : public paladin_spell_t
       {
         // TODO: get this from spell data
         p()->buffs.crusade->extend_duration_or_trigger( timespan_t::from_seconds( 10 ) );
+        p()->active.background_crusade->execute_on_target( p() );
       }
       else if ( p()->talents.avenging_wrath->ok() )
       {
         p()->buffs.avenging_wrath->extend_duration_or_trigger( timespan_t::from_seconds( 8 ) );
+        p()->active.background_avenging_wrath->execute_on_target( p() );
       }
 
       if ( do_avatar )
@@ -1486,6 +1516,11 @@ void paladin_t::trigger_es_explosion( player_t* target )
 
 void paladin_t::create_ret_actions()
 {
+  if ( talents.crusade->ok() )
+  {
+    active.background_crusade = new crusade_t( this );
+  }
+
   if ( talents.empyrean_legacy->ok() )
   {
     double empyrean_legacy_mult = 1.0 + talents.empyrean_legacy->effectN( 2 ).percent();

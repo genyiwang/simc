@@ -4958,7 +4958,7 @@ void wayward_vrykuls_lantern( special_effect_t& effect )
         if ( s->is_class( e.player->type ) )
         {
           proc_spell_id.insert( s->id() );
-          e.player->sim->print_debug( "Wayward Vrykul's can Proc off of Spell: %s: %d\n", s->name_cstr(), s->id() );
+          e.player->sim->print_debug( "Wayward Vrykul's can Proc off of Spell: {}: {}\n", s->name_cstr(), s->id() );
         }
 
       buff = create_buff<stat_buff_t>( e.player, e.trigger(), e.item )
