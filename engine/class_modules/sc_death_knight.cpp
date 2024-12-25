@@ -749,6 +749,7 @@ public:
     propagate_const<buff_t*> unbreakable_tww1_2pc;
     buff_t* unbroken_tww1_2pc;
     buff_t* piledriver_tww1_4pc;
+    propagate_const<buff_t*> luck_of_the_draw;
 
     // Frost
     propagate_const<buff_t*> breath_of_sindragosa;
@@ -1374,6 +1375,7 @@ public:
     const spell_data_t* unbreakable_tww1_2pc;
     const spell_data_t* unbroken_tww1_2pc;
     const spell_data_t* piledriver_tww1_4pc;
+    const spell_data_t* luck_of_the_draw;
 
     // Frost
     const spell_data_t* runic_empowerment_gain;
@@ -1549,6 +1551,7 @@ public:
   {
     modified_spell_data_t* infliction_of_sorrow;
     modified_spell_data_t* vampiric_strike;
+    modified_spell_data_t* tww2_bdk_2pc;
   } modified_spell;
 
   // RPPM
@@ -1770,6 +1773,7 @@ public:
   void create_buffs() override;
   void init_gains() override;
   void init_procs() override;
+  void init_special_effects() override;
   void init_finished() override;
   bool validate_fight_style( fight_style_e style ) const override;
   double composite_attribute( attribute_e ) const override;
@@ -10998,6 +11002,45 @@ struct vampiric_blood_t final : public death_knight_spell_t
   }
 };
 
+// ==========================================================================
+// Death Knight Proc Callbacks
+// ==========================================================================
+struct death_knight_proc_callback_t : public dbc_proc_callback_t
+{
+  death_knight_proc_callback_t( const special_effect_t& e ) : dbc_proc_callback_t( e.player, e )
+  {
+  }
+
+  death_knight_t* p() const
+  {
+    return debug_cast<death_knight_t*>( listener );
+  }
+  death_knight_t* p()
+  {
+    return debug_cast<death_knight_t*>( listener );
+  }
+};
+
+void tww2_blood_2pc( const special_effect_t& e )
+{
+  struct tww2_blood_2pc : public death_knight_proc_callback_t
+  {
+    tww2_blood_2pc( const special_effect_t& e ) : death_knight_proc_callback_t( e )
+    {
+      initialize();
+      activate();
+    }
+
+    void execute( action_t*, action_state_t* ) override
+    {
+      p()->buffs.icebound_fortitude->trigger( p()->modified_spell.tww2_bdk_2pc->effectN( 1 ).time_value() );
+      p()->buffs.luck_of_the_draw->trigger();
+    }
+  };
+
+  new tww2_blood_2pc( e );
+}
+
 }  // UNNAMED NAMESPACE
 
 // Runeforges ===============================================================
@@ -13389,6 +13432,7 @@ void death_knight_t::spell_lookups()
   spell.unbreakable_tww1_2pc = conditional_spell_lookup( sets->has_set_bonus( DEATH_KNIGHT_BLOOD, TWW1, B2 ), 457468 );
   spell.unbroken_tww1_2pc    = conditional_spell_lookup( sets->has_set_bonus( DEATH_KNIGHT_BLOOD, TWW1, B2 ), 457473 );
   spell.piledriver_tww1_4pc  = conditional_spell_lookup( sets->has_set_bonus( DEATH_KNIGHT_BLOOD, TWW1, B4 ), 457506 );
+  spell.luck_of_the_draw     = conditional_spell_lookup( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_BLOOD, TWW2, B2 ), 1218601 );
 
   // Frost
   spell.murderous_efficiency_gain   = conditional_spell_lookup( talent.frost.murderous_efficiency.ok(), 207062 );
@@ -14120,6 +14164,9 @@ void death_knight_t::create_buffs()
             ->set_chance( 0.15 );  // TODO Verify this number.  Was found through manual testing, not in spelldata
     buffs.piledriver_tww1_4pc = make_buff( this, "piledriver", spell.piledriver_tww1_4pc )
                                     ->set_constant_behavior( buff_constant_behavior::NEVER_CONSTANT );
+    // TWW2
+    buffs.luck_of_the_draw = make_fallback( sets->has_set_bonus( DEATH_KNIGHT_BLOOD, TWW2, B2 ), this,
+                                            "luck_of_the_draw", spell.luck_of_the_draw );
   }
 
   // Frost
@@ -14402,6 +14449,25 @@ void death_knight_t::init_procs()
   procs.vampiric_strike_waste = get_proc( "Vampiric Strike Proc Wasted" );
 
   procs.exterminate_reapers_mark = get_proc( "Reaper's Mark from Exterminate" );
+}
+
+// death_knight_t::init_special_effects =====================================
+void death_knight_t::init_special_effects()
+{
+  player_t::init_special_effects();
+
+  if ( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_BLOOD, TWW2, B2 ) )
+  {
+    const spell_data_t* set_data = sets->set( DEATH_KNIGHT_BLOOD, TWW2, B2 );
+    auto set                     = new special_effect_t( this );
+    set->name_str                = set_data->name_cstr();
+    set->spell_id                = set_data->id();
+    set->type                    = SPECIAL_EFFECT_EQUIP;
+    set->proc_flags2_            = PF2_ALL_HIT;
+    special_effects.push_back( set );
+
+    tww2_blood_2pc( *set );
+  }
 }
 
 // death_knight_t::init_finished ============================================
@@ -14885,6 +14951,7 @@ void pets::pet_action_t<T_PET, Base>::apply_pet_action_effects()
   parse_effects( dk()->buffs.heartrend, dk()->talent.blood.heartrend );
   parse_effects( dk()->buffs.hemostasis );
   parse_effects( dk()->buffs.ossuary );
+  parse_effects( dk()->buffs.luck_of_the_draw );
 
   // Don't auto parse coag, since there is some snapshot behavior when the weapon dies
   // parse_effects( dk()->buffs.coagulopathy );
@@ -14948,6 +15015,9 @@ void death_knight_t::apply_effect_modifying_effects()
 
   modified_spell.vampiric_strike =
       get_modified_spell( talent.sanlayn.vampiric_strike )->parse_effects( spec.blood_death_knight );
+
+  modified_spell.tww2_bdk_2pc = get_modified_spell( sets->set( DEATH_KNIGHT_BLOOD, TWW2, B2 ) )
+                                    ->parse_effects( sets->set( DEATH_KNIGHT_BLOOD, TWW2, B4 ) );
 }
 
 template <class Base>
@@ -14965,6 +15035,7 @@ void death_knight_action_t<Base>::apply_action_effects()
   parse_effects( p()->buffs.heartrend, p()->talent.blood.heartrend );
   parse_effects( p()->buffs.hemostasis );
   parse_effects( p()->buffs.ossuary );
+  parse_effects( p()->buffs.luck_of_the_draw );
 
   // Frost
   parse_effects( p()->buffs.rime, p()->talent.frost.improved_rime );
