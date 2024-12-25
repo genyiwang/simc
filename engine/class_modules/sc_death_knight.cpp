@@ -885,10 +885,6 @@ public:
     propagate_const<action_t*> blood_draw;
 
     // Rider of the Apocalypse
-    action_t* summon_whitemane;
-    action_t* summon_trollbane;
-    action_t* summon_nazgrim;
-    action_t* summon_mograine;
     propagate_const<action_t*> undeath_dot;
     propagate_const<action_t*> trollbanes_icy_fury;
 
@@ -932,8 +928,22 @@ public:
     propagate_const<action_t*> unholy_blight;
     action_t* unholy_pact_damage;
     action_t* decomposition_damage;
-
   } active_spells;
+
+  struct pet_summon_actions_t
+  {
+    // Blood
+    propagate_const<action_t*> bloodworm;
+
+    // San'layn
+    propagate_const<action_t*> blood_beast;
+
+    // Rider of the Apocalypse
+    action_t* summon_whitemane;
+    action_t* summon_trollbane;
+    action_t* summon_nazgrim;
+    action_t* summon_mograine;
+  } pet_summon;
 
   // Gains
   struct gains_t
@@ -4976,6 +4986,37 @@ struct death_knight_summon_spell_t : public death_knight_spell_t
   }
 };
 
+struct bloodworm_summon_t : public death_knight_summon_spell_t
+{
+  bloodworm_summon_t( std::string_view n, death_knight_t* p )
+    : death_knight_summon_spell_t( n, p, p->talent.blood.bloodworms->effectN( 1 ).trigger() )
+  {
+  }
+
+  void execute() override
+  {
+    death_knight_summon_spell_t::execute();
+    p()->procs.bloodworms->occur();
+    p()->pets.bloodworms.spawn();
+  }
+};
+
+struct blood_beast_summon_t : public death_knight_summon_spell_t
+{
+  blood_beast_summon_t( std::string_view n, death_knight_t* p )
+    : death_knight_summon_spell_t( n, p, p->spell.blood_beast_summon )
+  {
+  }
+
+  void execute() override
+  {
+    death_knight_summon_spell_t::execute();
+    p()->procs.blood_beast->occur();
+    p()->pets.blood_beast.spawn();
+  }
+};
+
+// Blood Shield =============================================================
 struct blood_shield_buff_t final : public absorb_buff_t
 {
   blood_shield_buff_t( death_knight_t* p ) : absorb_buff_t( p, "blood_shield", p->spell.blood_shield )
@@ -10993,27 +11034,6 @@ void tww2_blood_2pc( const special_effect_t& e )
   new tww2_blood_2pc( e );
 }
 
-void bloodworms_spawn( const special_effect_t& e )
-{
-  struct bloodworms_spawn : public death_knight_proc_callback_t
-  {
-    bloodworms_spawn( const special_effect_t& e ) : death_knight_proc_callback_t( e )
-    {
-    }
-
-    void execute( action_t*, action_state_t* ) override
-    {
-      p()->procs.bloodworms->occur();
-
-      // TODO: check whether spelldata is wrong or tooltip is using the wrong spelldata
-      // Spelldata used in the tooltip: 15s
-      p()->pets.bloodworms.spawn();
-    }
-  };
-
-  new bloodworms_spawn( e );
-}
-
 void runic_attenuation_proc( const special_effect_t& e )
 {
   struct runic_attenuation_proc : public death_knight_proc_callback_t
@@ -11952,22 +11972,22 @@ void death_knight_t::summon_rider( timespan_t duration, bool random )
   switch ( n )
   {
     case rider_of_the_apocalypse::MOGRAINE:
-      summon_riders.push_back( active_spells.summon_mograine );
+      summon_riders.push_back( pet_summon.summon_mograine );
       break;
     case rider_of_the_apocalypse::NAZGRIM:
-      summon_riders.push_back( active_spells.summon_nazgrim );
+      summon_riders.push_back( pet_summon.summon_nazgrim );
       break;
     case rider_of_the_apocalypse::TROLLBANE:
-      summon_riders.push_back( active_spells.summon_trollbane );
+      summon_riders.push_back( pet_summon.summon_trollbane );
       break;
     case rider_of_the_apocalypse::WHITEMANE:
-      summon_riders.push_back( active_spells.summon_whitemane );
+      summon_riders.push_back( pet_summon.summon_whitemane );
       break;
     case rider_of_the_apocalypse::ALL_RIDERS:
-      summon_riders.push_back( active_spells.summon_mograine );
-      summon_riders.push_back( active_spells.summon_nazgrim );
-      summon_riders.push_back( active_spells.summon_trollbane );
-      summon_riders.push_back( active_spells.summon_whitemane );
+      summon_riders.push_back( pet_summon.summon_mograine );
+      summon_riders.push_back( pet_summon.summon_nazgrim );
+      summon_riders.push_back( pet_summon.summon_trollbane );
+      summon_riders.push_back( pet_summon.summon_whitemane );
       break;
   }
 
@@ -12174,8 +12194,7 @@ void death_knight_t::trigger_sanlayn_execute_talents( bool is_vampiric )
     active_spells.vampiric_strike_heal->execute();
     if ( rppm.blood_beast->trigger() )
     {
-      procs.blood_beast->occur();
-      pets.blood_beast.spawn();
+      pet_summon.blood_beast->execute();
     }
     buffs.essence_of_the_blood_queen->trigger();
     if ( !buffs.gift_of_the_sanlayn->check() )
@@ -12369,15 +12388,15 @@ void death_knight_t::create_actions()
   // Rider of the Apocalypse
   if ( talent.rider.riders_champion.ok() )
   {
-    active_spells.summon_whitemane = get_action<summon_whitemane_t>( "summon_whitemane", this );
+    pet_summon.summon_whitemane = get_action<summon_whitemane_t>( "summon_whitemane", this );
     active_spells.undeath_dot = get_action<undeath_dot_t>( "undeath", this );
 
-    active_spells.summon_mograine = get_action<summon_mograine_t>( "summon_mograine", this );
+    pet_summon.summon_mograine = get_action<summon_mograine_t>( "summon_mograine", this );
 
-    active_spells.summon_trollbane = get_action<summon_trollbane_t>( "summon_trollbane", this );
+    pet_summon.summon_trollbane = get_action<summon_trollbane_t>( "summon_trollbane", this );
     active_spells.trollbanes_icy_fury = get_action<trollbanes_icy_fury_t>( "trollbanes_icy_fury", this );
 
-    active_spells.summon_nazgrim = get_action<summon_nazgrim_t>( "summon_nazgrim", this );
+    pet_summon.summon_nazgrim = get_action<summon_nazgrim_t>( "summon_nazgrim", this );
   }
 
   // San'layn
@@ -12394,6 +12413,7 @@ void death_knight_t::create_actions()
   if ( talent.sanlayn.the_blood_is_life.ok() )
   {
     active_spells.the_blood_is_life = get_action<the_blood_is_life_t>( "the_blood_is_life", this );
+    pet_summon.blood_beast = get_action<blood_beast_summon_t>( "blood_beast_summon", this );
   }
 
   // Deathbringer
@@ -12434,6 +12454,10 @@ void death_knight_t::create_actions()
     {
       active_spells.soul_reaper_execute_expired_drw =
           get_action<soul_reaper_execute_t>( "soul_reaper_execute_expired_drw", this );
+    }
+    if ( talent.blood.bloodworms )
+    {
+      pet_summon.bloodworm = get_action<bloodworm_summon_t>( "bloodworm_summon", this );
     }
   }
 
@@ -14459,13 +14483,12 @@ void death_knight_t::init_special_effects()
 
   if ( talent.blood.bloodworms.ok() )
   {
-    auto bloodworms      = new special_effect_t( this );
-    bloodworms->name_str = "bloodworms";
-    bloodworms->spell_id = talent.blood.bloodworms->id();
-    bloodworms->type     = SPECIAL_EFFECT_EQUIP;
+    auto bloodworms            = new special_effect_t( this );
+    bloodworms->name_str       = "bloodworms";
+    bloodworms->spell_id       = talent.blood.bloodworms->id();
+    bloodworms->type           = SPECIAL_EFFECT_EQUIP;
+    bloodworms->execute_action = pet_summon.bloodworm;
     special_effects.push_back( bloodworms );
-
-    bloodworms_spawn( *bloodworms );
   }
 
   if ( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_BLOOD, TWW2, B2 ) )
