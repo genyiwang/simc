@@ -15227,6 +15227,7 @@ void death_knight_t::apply_affecting_auras( buff_t& buff )
 
   // Blood
   buff.apply_affecting_aura( talent.blood.reinforced_bones );
+  buff.apply_affecting_aura( sets->set( DEATH_KNIGHT_BLOOD, TWW2, B4 ) );
 
   // Frost
   buff.apply_affecting_aura( talent.frost.smothering_offense );
