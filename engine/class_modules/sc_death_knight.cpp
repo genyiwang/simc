@@ -1557,9 +1557,7 @@ public:
   // RPPM
   struct rppm_t
   {
-    real_ppm_t* bloodworms;
     real_ppm_t* carnage;
-    real_ppm_t* runic_attenuation;
     real_ppm_t* blood_beast;
     real_ppm_t* tww1_fdk_4pc;
     real_ppm_t* tww2_frostscythe;
@@ -5987,11 +5985,6 @@ struct melee_t : public death_knight_melee_attack_t
   {
     death_knight_melee_attack_t::impact( s );
 
-    if ( p()->talent.runic_attenuation.ok() )
-    {
-      trigger_runic_attenuation( s );
-    }
-
     if ( result_is_hit( s->result ) )
     {
       if ( p()->talent.unholy.sudden_doom.ok() && rng().roll( sd_chance * ++autos_since_last_proc ) )
@@ -6033,40 +6026,7 @@ struct melee_t : public death_knight_melee_attack_t
           p()->cooldown.death_and_decay_dynamic->reset( true );
         }
       }
-
-      if ( p()->talent.blood.bloodworms.ok() )
-      {
-        trigger_bloodworm();
-      }
     }
-  }
-
-  void trigger_runic_attenuation( action_state_t* s )
-  {
-    if ( !p()->rppm.runic_attenuation->trigger() )
-    {
-      return;
-    }
-
-    p()->resource_gain(
-        RESOURCE_RUNIC_POWER,
-        p()->talent.runic_attenuation->effectN( 1 ).trigger()->effectN( 1 ).resource( RESOURCE_RUNIC_POWER ),
-        p()->gains.runic_attenuation, s->action );
-  }
-
-  void trigger_bloodworm()
-  {
-    if ( !p()->rppm.bloodworms->trigger() )
-    {
-      return;
-    }
-    p()->procs.bloodworms->occur();
-
-    // TODO: check whether spelldata is wrong or tooltip is using the wrong spelldata
-    // Spelldata used in the tooltip: 15s
-    p()->pets.bloodworms.spawn();
-    // Pet spawn spelldata: 16s
-    // p() -> pets.bloodworms.spawn( p() -> talent.bloodworms -> effectN( 1 ).trigger() -> duration(), 1 );
   }
 
   void trigger_permafrost( action_state_t* state )
@@ -11033,6 +10993,47 @@ void tww2_blood_2pc( const special_effect_t& e )
   new tww2_blood_2pc( e );
 }
 
+void bloodworms_spawn( const special_effect_t& e )
+{
+  struct bloodworms_spawn : public death_knight_proc_callback_t
+  {
+    bloodworms_spawn( const special_effect_t& e ) : death_knight_proc_callback_t( e )
+    {
+    }
+
+    void execute( action_t*, action_state_t* ) override
+    {
+      p()->procs.bloodworms->occur();
+
+      // TODO: check whether spelldata is wrong or tooltip is using the wrong spelldata
+      // Spelldata used in the tooltip: 15s
+      p()->pets.bloodworms.spawn();
+    }
+  };
+
+  new bloodworms_spawn( e );
+}
+
+void runic_attenuation_proc( const special_effect_t& e )
+{
+  struct runic_attenuation_proc : public death_knight_proc_callback_t
+  {
+    runic_attenuation_proc( const special_effect_t& e ) : death_knight_proc_callback_t( e )
+    {
+    }
+
+    void execute( action_t*, action_state_t* s ) override
+    {
+      p()->resource_gain(
+          RESOURCE_RUNIC_POWER,
+          p()->talent.runic_attenuation->effectN( 1 ).trigger()->effectN( 1 ).resource( RESOURCE_RUNIC_POWER ),
+          p()->gains.runic_attenuation, s->action );
+    }
+  };
+
+  new runic_attenuation_proc( e );
+}
+
 }  // UNNAMED NAMESPACE
 
 // Runeforges ===============================================================
@@ -12993,13 +12994,9 @@ void death_knight_t::init_rng()
 {
   player_t::init_rng();
 
-  rppm.bloodworms        = get_rppm( "bloodworms", talent.blood.bloodworms );
   rppm.carnage           = get_rppm( "carnage", talent.blood.carnage );
-  rppm.runic_attenuation = get_rppm( "runic_attenuation", talent.runic_attenuation );
   rppm.blood_beast       = get_rppm( "blood_beast", talent.sanlayn.the_blood_is_life );
   rppm.tww1_fdk_4pc      = get_rppm( "tww1_fdk_4pc", sets->set( DEATH_KNIGHT_FROST, TWW1, B4 ) );
-  rppm.tww2_unh_2pc      = get_rppm( "tww2_unh_2pc", sets->set( DEATH_KNIGHT_UNHOLY, TWW2, B2 ) );
-  rppm.tww2_fdk_2pc      = get_rppm( "tww2_fdk_2pc", sets->set( DEATH_KNIGHT_FROST, TWW2, B2 ) );
   rppm.tww2_frostscythe  = get_rppm( "tww2_frostscythe", spell.winning_streak_frostscythe );
 }
 
@@ -14447,6 +14444,29 @@ void death_knight_t::init_procs()
 void death_knight_t::init_special_effects()
 {
   player_t::init_special_effects();
+
+  if ( talent.runic_attenuation.ok() )
+  {
+    auto runic_attenuation      = new special_effect_t( this );
+    runic_attenuation->name_str = "runic_attenuation";
+    runic_attenuation->spell_id = talent.runic_attenuation->id();
+    runic_attenuation->type     = SPECIAL_EFFECT_EQUIP;
+    runic_attenuation->disable_action();
+    special_effects.push_back( runic_attenuation );
+
+    runic_attenuation_proc( *runic_attenuation );
+  }
+
+  if ( talent.blood.bloodworms.ok() )
+  {
+    auto bloodworms      = new special_effect_t( this );
+    bloodworms->name_str = "bloodworms";
+    bloodworms->spell_id = talent.blood.bloodworms->id();
+    bloodworms->type     = SPECIAL_EFFECT_EQUIP;
+    special_effects.push_back( bloodworms );
+
+    bloodworms_spawn( *bloodworms );
+  }
 
   if ( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_BLOOD, TWW2, B2 ) )
   {
