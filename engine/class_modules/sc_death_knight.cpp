@@ -1562,8 +1562,6 @@ public:
     real_ppm_t* runic_attenuation;
     real_ppm_t* blood_beast;
     real_ppm_t* tww1_fdk_4pc;
-    real_ppm_t* tww2_unh_2pc;
-    real_ppm_t* tww2_fdk_2pc;
     real_ppm_t* tww2_frostscythe;
   } rppm;
 
@@ -4807,12 +4805,6 @@ struct death_knight_action_t : public parse_action_effects_t<Base>
     {
       p()->active_spells.blood_draw->execute();
     }
-
-    if ( p()->is_ptr() && p()->sets->has_set_bonus( DEATH_KNIGHT_UNHOLY, TWW2, B2 ) && p()->rppm.tww2_unh_2pc->trigger() )
-      p()->buffs.winning_streak_unholy->trigger();
-
-    if( p()->is_ptr() && p()->sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW2, B2 ) && p()->rppm.tww2_fdk_2pc->trigger() )
-      p()->buffs.winning_streak_frost->trigger();
   }
 
   void impact( action_state_t* s ) override
@@ -11009,6 +11001,8 @@ struct death_knight_proc_callback_t : public dbc_proc_callback_t
 {
   death_knight_proc_callback_t( const special_effect_t& e ) : dbc_proc_callback_t( e.player, e )
   {
+    initialize();
+    activate();
   }
 
   death_knight_t* p() const
@@ -11027,8 +11021,6 @@ void tww2_blood_2pc( const special_effect_t& e )
   {
     tww2_blood_2pc( const special_effect_t& e ) : death_knight_proc_callback_t( e )
     {
-      initialize();
-      activate();
     }
 
     void execute( action_t*, action_state_t* ) override
@@ -14467,6 +14459,32 @@ void death_knight_t::init_special_effects()
     special_effects.push_back( set );
 
     tww2_blood_2pc( *set );
+  }
+
+  if ( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_UNHOLY, TWW2, B2 ) )
+  {
+    const spell_data_t* set_data = sets->set( DEATH_KNIGHT_UNHOLY, TWW2, B2 );
+    auto set                     = new special_effect_t( this );
+    set->name_str                = set_data->name_cstr();
+    set->spell_id                = set_data->id();
+    set->type                    = SPECIAL_EFFECT_EQUIP;
+    set->custom_buff             = buffs.winning_streak_unholy;
+    special_effects.push_back( set );
+
+    new death_knight_proc_callback_t( *set );
+  }
+
+  if ( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_FROST, TWW2, B2 ) )
+  {
+    const spell_data_t* set_data = sets->set( DEATH_KNIGHT_FROST, TWW2, B2 );
+    auto set                     = new special_effect_t( this );
+    set->name_str                = set_data->name_cstr();
+    set->spell_id                = set_data->id();
+    set->type                    = SPECIAL_EFFECT_EQUIP;
+    set->custom_buff             = buffs.winning_streak_frost;
+    special_effects.push_back( set );
+
+    new death_knight_proc_callback_t( *set );
   }
 }
 
