@@ -4991,6 +4991,7 @@ struct bloodworm_summon_t : public death_knight_summon_spell_t
   bloodworm_summon_t( std::string_view n, death_knight_t* p )
     : death_knight_summon_spell_t( n, p, p->talent.blood.bloodworms->effectN( 1 ).trigger() )
   {
+    background = true;
   }
 
   void execute() override
@@ -5006,6 +5007,7 @@ struct blood_beast_summon_t : public death_knight_summon_spell_t
   blood_beast_summon_t( std::string_view n, death_knight_t* p )
     : death_knight_summon_spell_t( n, p, p->spell.blood_beast_summon )
   {
+    background = true;
   }
 
   void execute() override
@@ -12455,9 +12457,9 @@ void death_knight_t::create_actions()
       active_spells.soul_reaper_execute_expired_drw =
           get_action<soul_reaper_execute_t>( "soul_reaper_execute_expired_drw", this );
     }
-    if ( talent.blood.bloodworms )
+    if ( talent.blood.bloodworms.ok() )
     {
-      pet_summon.bloodworm = get_action<bloodworm_summon_t>( "bloodworm_summon", this );
+      pet_summon.bloodworm = get_action<bloodworm_summon_t>( "bloodworms_summon", this );
     }
   }
 
@@ -14489,6 +14491,8 @@ void death_knight_t::init_special_effects()
     bloodworms->type           = SPECIAL_EFFECT_EQUIP;
     bloodworms->execute_action = pet_summon.bloodworm;
     special_effects.push_back( bloodworms );
+
+    new death_knight_proc_callback_t( *bloodworms );
   }
 
   if ( is_ptr() && sets->has_set_bonus( DEATH_KNIGHT_BLOOD, TWW2, B2 ) )
