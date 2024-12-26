@@ -341,7 +341,6 @@ jobs:
         cppVersion: [17]
         compiler: [clang++-15]
         spec: [
-            shaman_elemental
           ]
         fightstyle: [singletarget, multitarget, dungeonslice]
         include:
