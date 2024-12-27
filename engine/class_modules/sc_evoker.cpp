@@ -3890,7 +3890,7 @@ struct fire_breath_t : public empowered_charge_spell_t
     {
       empowered_release_spell_t::last_tick( d );
 
-      if ( p()->talent.molten_embers.enabled() )
+      if ( p()->talent.molten_embers.enabled() || p()->talent.scorching_embers.enabled() && p()->is_ptr() )
       {
         auto td = p()->get_target_data( d->target );
         if ( td )
@@ -8852,7 +8852,7 @@ void evoker_t::reset()
     }
   }
 
-  if ( talent.molten_embers.enabled() )
+  if ( talent.molten_embers.enabled() || talent.scorching_embers.enabled() && is_ptr() )
   {
     for ( evoker_td_t* td : target_data.get_entries() )
     {
