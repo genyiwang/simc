@@ -2106,19 +2106,25 @@ struct demon_hunter_sigil_t : public demon_hunter_spell_t
         p()->proc.soul_fragment_from_soul_sigils->occur();
       }
     }
-    if ( hit_any_target && p()->talent.vengeance.cycle_of_binding->ok() )
+    if ( hit_any_target && !p()->is_ptr() && p()->talent.vengeance.cycle_of_binding->ok() )
     {
-      // this is an event so that cooldown tracking occurs correctly
-      make_event( *p()->sim, 0_ms, [ this ]() {
-        std::vector<cooldown_t*> sigils_on_cooldown;
-        range::copy_if( this->sigil_cooldowns, std::back_inserter( sigils_on_cooldown ),
-                        []( cooldown_t* c ) { return c->down(); } );
-        for ( auto sigil_cooldown : sigils_on_cooldown )
-        {
-          sigil_cooldown->adjust( this->sigil_cooldown_adjust );
-        }
-      } );
+      trigger_cycle_of_binding_event();
     }
+  }
+
+  void trigger_cycle_of_binding_event()
+  {
+    p()->sim->print_debug( "triggering cycle of binding event" );
+    // this is an event so that cooldown tracking occurs correctly
+    make_event( *p()->sim, 0_ms, [ this ]() {
+      std::vector<cooldown_t*> sigils_on_cooldown;
+      range::copy_if( this->sigil_cooldowns, std::back_inserter( sigils_on_cooldown ),
+                      []( cooldown_t* c ) { return c->down(); } );
+      for ( auto sigil_cooldown : sigils_on_cooldown )
+      {
+        sigil_cooldown->adjust( this->sigil_cooldown_adjust );
+      }
+    } );
   }
 
   std::unique_ptr<expr_t> create_sigil_expression( util::string_view name );
@@ -3273,6 +3279,10 @@ struct sigil_of_flame_damage_base_t : public demon_hunter_sigil_t
     if ( p()->talent.felscarred.student_of_suffering->ok() )
     {
       p()->buff.student_of_suffering->trigger();
+    }
+    if ( hit_any_target && p()->is_ptr() && p()->talent.vengeance.cycle_of_binding->ok() )
+    {
+      trigger_cycle_of_binding_event();
     }
   }
 
