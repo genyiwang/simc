@@ -2416,6 +2416,32 @@ struct inertia_trigger_t : public BASE
   }
 };
 
+template <typename BASE>
+struct unbound_chaos_trigger_t : public BASE
+{
+  using base_t = unbound_chaos_trigger_t<BASE>;
+
+  unbound_chaos_trigger_t( util::string_view n, demon_hunter_t* p, const spell_data_t* s, util::string_view o )
+    : BASE( n, p, s, o )
+  {
+  }
+
+  virtual bool can_trigger_unbound_chaos()
+  {
+    return BASE::p()->is_ptr() && BASE::p()->talent.havoc.unbound_chaos->ok();
+  }
+
+  void execute() override
+  {
+    BASE::execute();
+
+    if ( can_trigger_unbound_chaos() )
+    {
+      BASE::p()->buff.unbound_chaos->trigger();
+    }
+  }
+};
+
 // ==========================================================================
 // Demon Hunter heals
 // ==========================================================================
@@ -4453,7 +4479,8 @@ struct sigil_of_spite_t : public demon_hunter_spell_t
 
 // The Hunt =================================================================
 
-struct the_hunt_t : public inertia_trigger_trigger_t<exergy_trigger_t<momentum_trigger_t<demon_hunter_spell_t>>>
+struct the_hunt_t : public unbound_chaos_trigger_t<
+                        inertia_trigger_trigger_t<exergy_trigger_t<momentum_trigger_t<demon_hunter_spell_t>>>>
 {
   struct the_hunt_damage_t : public demon_hunter_spell_t
   {
@@ -5730,6 +5757,16 @@ struct felblade_t : public demon_hunter_attack_t
       background = dual = true;
       gain              = p->get_gain( "felblade" );
     }
+
+    double action_multiplier() const override
+    {
+      double am = base_t::action_multiplier();
+
+      if ( p()->is_ptr() )
+        am *= 1.0 + p()->buff.unbound_chaos->value();
+
+      return am;
+    }
   };
 
   unsigned max_fragments_consumed;
@@ -5759,6 +5796,8 @@ struct felblade_t : public demon_hunter_attack_t
       event_t::cancel( p()->soul_fragment_pick_up );
       p()->consume_soul_fragments( soul_fragment::ANY, false, max_fragments_consumed );
     }
+    if ( p()->is_ptr() )
+      p()->buff.unbound_chaos->expire();
   }
 };
 
@@ -6372,7 +6411,8 @@ struct burning_blades_t
 
 // Vengeful Retreat =========================================================
 
-struct vengeful_retreat_t : public inertia_trigger_trigger_t<exergy_trigger_t<momentum_trigger_t<demon_hunter_spell_t>>>
+struct vengeful_retreat_t : public unbound_chaos_trigger_t<
+                                inertia_trigger_trigger_t<exergy_trigger_t<momentum_trigger_t<demon_hunter_spell_t>>>>
 {
   struct vengeful_retreat_damage_t : public demon_hunter_spell_t
   {
@@ -6727,10 +6767,10 @@ struct immolation_aura_buff_t : public demon_hunter_buff_t<buff_t>
 
       growing_inferno_ticks++;
 
-      if ( p()->talent.havoc.unbound_chaos->ok() )
+      if ( !p()->is_ptr() && p()->talent.havoc.unbound_chaos->ok() )
       {
         p()->buff.unbound_chaos->trigger();
-        if ( !p()->is_ptr() && p()->talent.havoc.inertia->ok() )
+        if ( p()->talent.havoc.inertia->ok() )
         {
           p()->buff.inertia_trigger->trigger();
         }
@@ -7517,7 +7557,8 @@ void demon_hunter_t::create_buffs()
                               } );
 
   buff.unbound_chaos = make_buff( this, "unbound_chaos", spec.unbound_chaos_buff )
-                           ->set_default_value( talent.havoc.unbound_chaos->effectN( 2 ).percent() );
+                           ->set_default_value( is_ptr() ? spec.unbound_chaos_buff->effectN( 1 ).percent()
+                                                         : talent.havoc.unbound_chaos->effectN( 2 ).percent() );
 
   buff.chaos_theory = make_buff( this, "chaos_theory", spec.chaos_theory_buff );
 
