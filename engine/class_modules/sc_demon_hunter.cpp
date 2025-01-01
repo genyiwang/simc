@@ -447,6 +447,7 @@ public:
       player_talent_t fel_barrage;  // Old implementation
       player_talent_t shattered_destiny;
       player_talent_t any_means_necessary;
+      player_talent_t screaming_brutality;
       player_talent_t a_fire_inside;
 
     } havoc;
@@ -897,14 +898,17 @@ public:
     spell_t* collective_anguish      = nullptr;
 
     // Havoc
-    spell_t* burning_wound                      = nullptr;
-    attack_t* demon_blades                      = nullptr;
-    spell_t* fel_barrage                        = nullptr;
-    spell_t* inner_demon                        = nullptr;
-    spell_t* ragefire                           = nullptr;
-    attack_t* relentless_onslaught              = nullptr;
-    attack_t* relentless_onslaught_annihilation = nullptr;
-    action_t* soulscar                          = nullptr;
+    spell_t* burning_wound                                 = nullptr;
+    attack_t* demon_blades                                 = nullptr;
+    spell_t* fel_barrage                                   = nullptr;
+    spell_t* inner_demon                                   = nullptr;
+    spell_t* ragefire                                      = nullptr;
+    attack_t* relentless_onslaught                         = nullptr;
+    attack_t* relentless_onslaught_annihilation            = nullptr;
+    action_t* soulscar                                     = nullptr;
+    attack_t* screaming_brutality_blade_dance_throw_glaive = nullptr;
+    attack_t* screaming_brutality_death_sweep_throw_glaive = nullptr;
+    attack_t* screaming_brutality_slash_proc_throw_glaive  = nullptr;
 
     // Vengeance
     spell_t* infernal_armor = nullptr;
@@ -5166,6 +5170,19 @@ struct blade_dance_base_t
         p()->proc.blade_dance_in_essence_break->occur();
     }
 
+    if ( p()->talent.havoc.screaming_brutality->ok() )
+    {
+      for ( auto& attack : ( p()->talent.havoc.first_blood->ok() ? first_blood_attacks : attacks ) )
+      {
+        double chance = p()->talent.havoc.screaming_brutality->effectN( 2 ).percent();
+        if ( rng().roll( chance ) )
+        {
+          make_event<delayed_execute_event_t>( *sim, p(), p()->active.screaming_brutality_slash_proc_throw_glaive,
+                                               target, attack->delay );
+        }
+      }
+    }
+
     // Create Strike Events
     if ( !p()->talent.havoc.first_blood->ok() || p()->sim->target_non_sleeping_list.size() > 1 )
     {
@@ -5231,6 +5248,9 @@ struct blade_dance_t : public blade_dance_base_t
       first_blood_attacks.push_back( p->get_background_action<blade_dance_damage_t>(
           "blade_dance_first_blood_4", data().effectN( 5 ), p->spec.first_blood_blade_dance_2_damage ) );
     }
+
+    if ( p->talent.havoc.screaming_brutality->ok() && p->active.screaming_brutality_blade_dance_throw_glaive )
+      add_child( p->active.screaming_brutality_blade_dance_throw_glaive );
   }
 
   bool ready() override
@@ -5239,6 +5259,16 @@ struct blade_dance_t : public blade_dance_base_t
       return false;
 
     return !p()->buff.metamorphosis->check();
+  }
+
+  void execute() override
+  {
+    blade_dance_base_t::execute();
+
+    if ( p()->talent.havoc.screaming_brutality->ok() && p()->cooldown.throw_glaive->up() )
+    {
+      p()->active.screaming_brutality_blade_dance_throw_glaive->execute_on_target( target );
+    }
   }
 };
 
@@ -5270,6 +5300,9 @@ struct death_sweep_t : public blade_dance_base_t
       first_blood_attacks.push_back( p->get_background_action<blade_dance_damage_t>(
           "death_sweep_first_blood_4", data().effectN( 5 ), p->spec.first_blood_death_sweep_2_damage ) );
     }
+
+    if ( p->talent.havoc.screaming_brutality->ok() && p->active.screaming_brutality_death_sweep_throw_glaive )
+      add_child( p->active.screaming_brutality_death_sweep_throw_glaive );
   }
 
   void execute() override
@@ -5285,6 +5318,10 @@ struct death_sweep_t : public blade_dance_base_t
     blade_dance_base_t::execute();
 
     p()->trigger_demonsurge( demonsurge_ability::DEATH_SWEEP );
+    if ( p()->talent.havoc.screaming_brutality->ok() && p()->cooldown.throw_glaive->up() )
+    {
+      p()->active.screaming_brutality_death_sweep_throw_glaive->execute_on_target( target );
+    }
   }
 
   bool ready() override
@@ -6229,13 +6266,39 @@ struct soul_cleave_t : public soul_cleave_base_t
 
 struct throw_glaive_t : public cycle_of_hatred_trigger_t<demon_hunter_attack_t>
 {
+  enum class glaive_source
+  {
+    THROWN                                = 0,
+    SCREAMING_BRUTALITY_SLASH_PROC_THROW  = 1,
+    SCREAMING_BRUTALITY_BLADE_DANCE_THROW = 2,
+    SCREAMING_BRUTALITY_DEATH_SWEEP_THROW = 3
+  };
+
   struct throw_glaive_damage_t : public soulscar_trigger_t<burning_blades_trigger_t<demon_hunter_attack_t>>
   {
-    throw_glaive_damage_t( util::string_view name, demon_hunter_t* p )
-      : base_t( name, p, p->spell.throw_glaive->effectN( 1 ).trigger() )
+    glaive_source source;
+
+    throw_glaive_damage_t( util::string_view name, demon_hunter_t* p, glaive_source source = glaive_source::THROWN )
+      : base_t( name, p, p->spell.throw_glaive->effectN( 1 ).trigger() ), source( source )
     {
       background = dual = true;
       radius            = 10.0;
+
+      switch ( source )
+      {
+        case glaive_source::SCREAMING_BRUTALITY_SLASH_PROC_THROW:
+          // slash procs have one multiplier
+          base_multiplier *= p->talent.havoc.screaming_brutality->effectN( 1 ).percent();
+          break;
+        case glaive_source::SCREAMING_BRUTALITY_BLADE_DANCE_THROW:
+        case glaive_source::SCREAMING_BRUTALITY_DEATH_SWEEP_THROW:
+          // regular procs have a different multiplier
+          base_multiplier *= p->talent.havoc.screaming_brutality->effectN( 3 ).percent();
+          break;
+        default:
+          // this handles THROWN (multiplier of 1 by default) and any new sources
+          break;
+      }
     }
 
     void impact( action_state_t* state ) override
@@ -6259,20 +6322,71 @@ struct throw_glaive_t : public cycle_of_hatred_trigger_t<demon_hunter_attack_t>
 
   throw_glaive_damage_t* furious_throws;
 
-  throw_glaive_t( util::string_view name, demon_hunter_t* p, util::string_view options_str )
+  throw_glaive_t( util::string_view name, demon_hunter_t* p, util::string_view options_str,
+                  glaive_source source = glaive_source::THROWN )
     : base_t( name, p, p->spell.throw_glaive, options_str ), furious_throws( nullptr )
   {
-    throw_glaive_damage_t* damage = p->get_background_action<throw_glaive_damage_t>( "throw_glaive_damage" );
+    throw_glaive_damage_t* damage;
+
+    switch ( source )
+    {
+      case glaive_source::SCREAMING_BRUTALITY_SLASH_PROC_THROW:
+        damage = p->get_background_action<throw_glaive_damage_t>( "throw_glaive_damage_sb_slash_proc_throw", source );
+        break;
+      case glaive_source::SCREAMING_BRUTALITY_BLADE_DANCE_THROW:
+        damage = p->get_background_action<throw_glaive_damage_t>( "throw_glaive_damage_sb_bd_throw", source );
+        break;
+      case glaive_source::SCREAMING_BRUTALITY_DEATH_SWEEP_THROW:
+        damage = p->get_background_action<throw_glaive_damage_t>( "throw_glaive_damage_sb_ds_throw", source );
+        break;
+      default:
+        damage = p->get_background_action<throw_glaive_damage_t>( "throw_glaive_damage", source );
+        break;
+    }
 
     execute_action        = damage;
     execute_action->stats = stats;
 
+    if ( source == glaive_source::SCREAMING_BRUTALITY_BLADE_DANCE_THROW ||
+         source == glaive_source::SCREAMING_BRUTALITY_DEATH_SWEEP_THROW )
+    {
+      cooldown->duration = 0_s;
+      cooldown->charges  = 0;
+
+      cooldown = p->cooldown.throw_glaive;
+    }
+    if ( source == glaive_source::SCREAMING_BRUTALITY_SLASH_PROC_THROW )
+    {
+      cooldown->duration = 0_s;
+      cooldown->charges  = 0;
+    }
+
     if ( p->talent.havoc.furious_throws->ok() )
     {
-      resource_current            = RESOURCE_FURY;
-      base_costs[ RESOURCE_FURY ] = p->talent.havoc.furious_throws->effectN( 1 ).base_value();
+      if ( source == glaive_source::THROWN )
+      {
+        resource_current            = RESOURCE_FURY;
+        base_costs[ RESOURCE_FURY ] = p->talent.havoc.furious_throws->effectN( 1 ).base_value();
+      }
 
-      furious_throws = p->get_background_action<throw_glaive_damage_t>( "throw_glaive_furious_throws" );
+      switch ( source )
+      {
+        case glaive_source::SCREAMING_BRUTALITY_SLASH_PROC_THROW:
+          furious_throws = p->get_background_action<throw_glaive_damage_t>(
+              "throw_glaive_furious_throws_sb_slash_proc_throw", source );
+          break;
+        case glaive_source::SCREAMING_BRUTALITY_BLADE_DANCE_THROW:
+          furious_throws =
+              p->get_background_action<throw_glaive_damage_t>( "throw_glaive_furious_throws_sb_bd_throw", source );
+          break;
+        case glaive_source::SCREAMING_BRUTALITY_DEATH_SWEEP_THROW:
+          furious_throws =
+              p->get_background_action<throw_glaive_damage_t>( "throw_glaive_furious_throws_sb_ds_throw", source );
+          break;
+        default:
+          furious_throws = p->get_background_action<throw_glaive_damage_t>( "throw_glaive_furious_throws", source );
+          break;
+      }
 
       add_child( furious_throws );
     }
@@ -8317,6 +8431,7 @@ void demon_hunter_t::init_spells()
   talent.havoc.fel_barrage         = find_talent_spell( talent_tree::SPECIALIZATION, "Fel Barrage" );
   talent.havoc.shattered_destiny   = find_talent_spell( talent_tree::SPECIALIZATION, "Shattered Destiny" );
   talent.havoc.any_means_necessary = find_talent_spell( talent_tree::SPECIALIZATION, "Any Means Necessary" );
+  talent.havoc.screaming_brutality = find_talent_spell( talent_tree::SPECIALIZATION, "Screaming Brutality" );
   talent.havoc.a_fire_inside       = find_talent_spell( talent_tree::SPECIALIZATION, "A Fire Inside" );
 
   // Vengeance Talents
@@ -8651,6 +8766,15 @@ void demon_hunter_t::init_spells()
   if ( talent.havoc.soulscar->ok() )
   {
     active.soulscar = get_background_action<soulscar_t>( "soulscar" );
+  }
+  if ( talent.havoc.screaming_brutality->ok() )
+  {
+    active.screaming_brutality_blade_dance_throw_glaive = get_background_action<throw_glaive_t>(
+        "throw_glaive_sb_bd_throw", "", throw_glaive_t::glaive_source::SCREAMING_BRUTALITY_BLADE_DANCE_THROW );
+    active.screaming_brutality_death_sweep_throw_glaive = get_background_action<throw_glaive_t>(
+        "throw_glaive_sb_ds_throw", "", throw_glaive_t::glaive_source::SCREAMING_BRUTALITY_DEATH_SWEEP_THROW );
+    active.screaming_brutality_slash_proc_throw_glaive = get_background_action<throw_glaive_t>(
+        "throw_glaive_sb_slash_proc_throw", "", throw_glaive_t::glaive_source::SCREAMING_BRUTALITY_SLASH_PROC_THROW );
   }
 
   if ( talent.vengeance.retaliation->ok() )
