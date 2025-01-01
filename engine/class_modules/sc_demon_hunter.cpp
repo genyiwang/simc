@@ -324,6 +324,7 @@ public:
     buff_t* tww1_havoc_4pc;
     buff_t* tww1_vengeance_4pc;
     buff_t* luck_of_the_draw;
+    buff_t* winning_streak;
   } buff;
 
   // Talents
@@ -721,6 +722,8 @@ public:
     const spell_data_t* tww1_havoc_4pc;
     const spell_data_t* tww1_vengeance_2pc;
     const spell_data_t* tww1_vengeance_4pc;
+    const spell_data_t* tww2_havoc_2pc;
+    const spell_data_t* tww2_havoc_4pc;
     const spell_data_t* tww2_vengeance_2pc;
     const spell_data_t* tww2_vengeance_4pc;
 
@@ -863,6 +866,7 @@ public:
     proc_t* soul_fragment_from_vengeance_twws1_2pc;
     proc_t* metamorphosis_from_tww2_vengeance_2pc;
     proc_t* the_hunt_reset_from_tww2_vengeance_4pc;
+    proc_t* winning_streak_drop_from_tww2_havoc_2pc;
   } proc;
 
   // RPPM objects
@@ -1711,6 +1715,7 @@ public:
     ab::parse_effects( p()->buff.inertia );
     ab::parse_effects( p()->buff.restless_hunter );
     ab::parse_effects( p()->buff.tww1_havoc_4pc );
+    ab::parse_effects( p()->buff.winning_streak );
 
     // Vengeance
     ab::parse_effects( p()->buff.soul_furnace_damage_amp );
@@ -5059,6 +5064,13 @@ struct blade_dance_base_t
     {
       p()->buff.tww1_havoc_4pc->expire();
     }
+
+    if ( p()->set_bonuses.tww2_havoc_2pc->ok() && p()->buff.winning_streak->up() &&
+         rng().roll( p()->set_bonuses.tww2_havoc_2pc->effectN( 1 ).percent() ) )
+    {
+      p()->buff.winning_streak->expire();
+      p()->proc.winning_streak_drop_from_tww2_havoc_2pc->occur();
+    }
   }
 
   bool has_amount_result() const override
@@ -5346,6 +5358,13 @@ struct chaos_strike_base_t
     {
       p()->buff.tww1_havoc_4pc->trigger();
       p()->cooldown.blade_dance->reset( true );
+    }
+
+    if ( p()->set_bonuses.tww2_havoc_2pc->ok() && p()->buff.winning_streak->up() &&
+         rng().roll( p()->set_bonuses.tww2_havoc_2pc->effectN( 1 ).percent() ) )
+    {
+      p()->buff.winning_streak->expire();
+      p()->proc.winning_streak_drop_from_tww2_havoc_2pc->occur();
     }
   }
 
@@ -6955,6 +6974,15 @@ struct luck_of_the_draw_buff_t : public demon_hunter_buff_t<buff_t>
   }
 };
 
+struct winning_streak_buff_t : public demon_hunter_buff_t<buff_t>
+{
+  winning_streak_buff_t( demon_hunter_t* p )
+    : base_t( *p, "winning_streak", p->set_bonuses.tww2_havoc_2pc->effectN( 1 ).trigger() )
+  {
+    base_t::set_default_value_from_effect_type( A_ADD_PCT_MODIFIER );
+  }
+};
+
 }  // end namespace buffs
 
 // Namespace Actions post buffs
@@ -7528,6 +7556,7 @@ void demon_hunter_t::create_buffs()
                                 ->set_default_value_from_effect_type( A_ADD_PCT_MODIFIER, P_GENERIC );
 
   buff.luck_of_the_draw = make_buff<buffs::luck_of_the_draw_buff_t>( this );
+  buff.winning_streak   = make_buff<buffs::winning_streak_buff_t>( this );
 }
 
 struct metamorphosis_adjusted_cooldown_expr_t : public expr_t
@@ -7861,6 +7890,7 @@ void demon_hunter_t::init_procs()
   proc.soul_fragment_from_vengeance_twws1_2pc = get_proc( "soul_fragment_from_vengeance_twws1_2pc" );
   proc.metamorphosis_from_tww2_vengeance_2pc  = get_proc( "metamorphosis_from_tww2_vengeance_2pc" );
   proc.the_hunt_reset_from_tww2_vengeance_4pc = get_proc( "the_hunt_reset_from_tww2_vengeance_4pc" );
+  proc.winning_streak_drop_from_tww2_havoc_2pc = get_proc( "winning_streak_drop_from_tww2_havoc_2pc" );
 }
 
 // demon_hunter_t::init_uptimes =============================================
@@ -7885,6 +7915,19 @@ void demon_hunter_t::init_resources( bool force )
 void demon_hunter_t::init_special_effects()
 {
   base_t::init_special_effects();
+
+  if ( set_bonuses.tww2_havoc_2pc->ok() )
+  {
+    auto set_data    = set_bonuses.tww2_havoc_2pc;
+    auto set         = new special_effect_t( this );
+    set->name_str    = set_data->name_cstr();
+    set->spell_id    = set_data->id();
+    set->type        = SPECIAL_EFFECT_EQUIP;
+    set->custom_buff = buff.winning_streak;
+    special_effects.push_back( set );
+
+    new demon_hunter_proc_callback_t( *set );
+  }
 
   if ( set_bonuses.tww2_vengeance_2pc->ok() )
   {
@@ -8395,6 +8438,8 @@ void demon_hunter_t::init_spells()
   set_bonuses.tww1_havoc_4pc     = sets->set( DEMON_HUNTER_HAVOC, TWW1, B4 );
   set_bonuses.tww1_vengeance_2pc = sets->set( DEMON_HUNTER_VENGEANCE, TWW1, B2 );
   set_bonuses.tww1_vengeance_4pc = sets->set( DEMON_HUNTER_VENGEANCE, TWW1, B4 );
+  set_bonuses.tww2_havoc_2pc     = sets->set( DEMON_HUNTER_HAVOC, TWW2, B2 );
+  set_bonuses.tww2_havoc_4pc     = sets->set( DEMON_HUNTER_HAVOC, TWW2, B4 );
   set_bonuses.tww2_vengeance_2pc = sets->set( DEMON_HUNTER_VENGEANCE, TWW2, B2 );
   set_bonuses.tww2_vengeance_4pc = sets->set( DEMON_HUNTER_VENGEANCE, TWW2, B4 );
 
