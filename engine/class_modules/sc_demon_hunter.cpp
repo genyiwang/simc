@@ -4690,6 +4690,10 @@ struct demonsurge_t : public amn_full_mastery_bug_t<demon_hunter_spell_t>
   {
     background = dual = true;
     aoe               = -1;
+    if ( p->is_ptr() )
+    {
+      reduced_aoe_targets = data().effectN( 3 ).base_value();
+    }
   }
 
   void execute() override
