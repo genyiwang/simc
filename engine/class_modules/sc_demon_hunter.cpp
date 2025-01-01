@@ -279,6 +279,7 @@ public:
     buff_t* inertia_trigger;  // hidden buff that determines if we can trigger inertia
     buff_t* initiative;
     buff_t* inner_demon;
+    buff_t* exergy;
     buff_t* momentum;
     buff_t* out_of_range;
     buff_t* restless_hunter;
@@ -428,7 +429,8 @@ public:
       player_talent_t burning_wound;
 
       player_talent_t momentum;
-      player_talent_t inertia;  // NYI
+      player_talent_t exergy;
+      player_talent_t inertia;
       player_talent_t chaos_theory;
       player_talent_t restless_hunter;
       player_talent_t inner_demon;
@@ -635,6 +637,7 @@ public:
     const spell_data_t* initiative_buff;
     const spell_data_t* inner_demon_buff;
     const spell_data_t* inner_demon_damage;
+    const spell_data_t* exergy_buff;
     const spell_data_t* momentum_buff;
     const spell_data_t* inertia_buff;
     const spell_data_t* ragefire_damage;
@@ -1711,6 +1714,7 @@ public:
     ab::parse_effects( p()->buff.empowered_demon_soul );
 
     // Havoc
+    ab::parse_effects( p()->buff.exergy );
     ab::parse_effects( p()->buff.momentum );
     ab::parse_effects( p()->buff.inertia );
     ab::parse_effects( p()->buff.restless_hunter );
@@ -2310,6 +2314,54 @@ struct amn_full_mastery_bug_t : public BASE
         BASE::affected_by.any_means_necessary_full.periodic = true;
       }
     }
+  }
+};
+
+template <typename BASE>
+struct momentum_trigger_t : public BASE
+{
+  using base_t = momentum_trigger_t<BASE>;
+
+  momentum_trigger_t( util::string_view n, demon_hunter_t* p, const spell_data_t* s, util::string_view o )
+    : BASE( n, p, s, o )
+  {
+  }
+
+  virtual bool can_trigger_momentum()
+  {
+    return !BASE::p()->is_ptr() && BASE::p()->talent.havoc.momentum->ok();
+  }
+
+  void execute() override
+  {
+    if (can_trigger_momentum())
+      BASE::p()->buff.momentum->trigger();
+
+    BASE::execute();
+  }
+};
+
+template <typename BASE>
+struct exergy_trigger_t : public BASE
+{
+  using base_t = exergy_trigger_t<BASE>;
+
+  exergy_trigger_t( util::string_view n, demon_hunter_t* p, const spell_data_t* s, util::string_view o )
+    : BASE( n, p, s, o )
+  {
+  }
+
+  virtual bool can_trigger_exergy()
+  {
+    return BASE::p()->is_ptr() && BASE::p()->talent.havoc.exergy->ok();
+  }
+
+  void execute() override
+  {
+    if (can_trigger_exergy())
+      BASE::p()->buff.exergy->trigger();
+
+    BASE::execute();
   }
 };
 
@@ -4350,7 +4402,7 @@ struct sigil_of_spite_t : public demon_hunter_spell_t
 
 // The Hunt =================================================================
 
-struct the_hunt_t : public demon_hunter_spell_t
+struct the_hunt_t : public exergy_trigger_t<momentum_trigger_t<demon_hunter_spell_t>>
 {
   struct the_hunt_damage_t : public demon_hunter_spell_t
   {
@@ -4373,7 +4425,7 @@ struct the_hunt_t : public demon_hunter_spell_t
   };
 
   the_hunt_t( demon_hunter_t* p, util::string_view options_str )
-    : demon_hunter_spell_t( "the_hunt", p, p->spell.the_hunt, options_str )
+    : base_t( "the_hunt", p, p->spell.the_hunt, options_str )
   {
     movement_directionality             = movement_direction_type::TOWARDS;
     impact_action                       = p->get_background_action<the_hunt_damage_t>( "the_hunt_damage" );
@@ -4383,9 +4435,7 @@ struct the_hunt_t : public demon_hunter_spell_t
 
   void execute() override
   {
-    p()->buff.momentum->trigger();
-
-    demon_hunter_spell_t::execute();
+    base_t::execute();
 
     p()->set_out_of_range( timespan_t::zero() );  // Cancel all other movement
 
@@ -5663,7 +5713,7 @@ struct felblade_t : public demon_hunter_attack_t
 
 // Fel Rush =================================================================
 
-struct fel_rush_t : public demon_hunter_attack_t
+struct fel_rush_t : public momentum_trigger_t<demon_hunter_attack_t>
 {
   struct fel_rush_damage_t : public demon_hunter_spell_t
   {
@@ -5677,7 +5727,7 @@ struct fel_rush_t : public demon_hunter_attack_t
 
     double action_multiplier() const override
     {
-      double am = demon_hunter_spell_t::action_multiplier();
+      double am = base_t::action_multiplier();
 
       am *= 1.0 + p()->buff.unbound_chaos->value();
 
@@ -5693,10 +5743,8 @@ struct fel_rush_t : public demon_hunter_attack_t
   timespan_t gcd_lag;
 
   fel_rush_t( demon_hunter_t* p, util::string_view options_str )
-    : demon_hunter_attack_t( "fel_rush", p, p->spec.fel_rush )
+    : base_t( "fel_rush", p, p->spec.fel_rush, options_str )
   {
-    parse_options( options_str );
-
     may_miss = may_dodge = may_parry = may_block = false;
     min_gcd                                      = trigger_gcd;
 
@@ -5713,9 +5761,7 @@ struct fel_rush_t : public demon_hunter_attack_t
 
   void execute() override
   {
-    p()->buff.momentum->trigger();
-
-    demon_hunter_attack_t::execute();
+    base_t::execute();
 
     if ( p()->buff.inertia_trigger->up() && p()->talent.havoc.inertia->ok() )
     {
@@ -5746,12 +5792,12 @@ struct fel_rush_t : public demon_hunter_attack_t
     if ( gcd_lag < 0_ms )
       gcd_lag = 0_ms;
 
-    demon_hunter_attack_t::schedule_execute( s );
+    base_t::schedule_execute( s );
   }
 
   timespan_t gcd() const override
   {
-    return demon_hunter_attack_t::gcd() + gcd_lag;
+    return base_t::gcd() + gcd_lag;
   }
 
   bool ready() override
@@ -5764,7 +5810,7 @@ struct fel_rush_t : public demon_hunter_attack_t
     if ( p()->buffs.stormeaters_boon && p()->buffs.stormeaters_boon->check() )
       return false;
 
-    return demon_hunter_attack_t::ready();
+    return base_t::ready();
   }
 };
 
@@ -6275,7 +6321,7 @@ struct burning_blades_t
 
 // Vengeful Retreat =========================================================
 
-struct vengeful_retreat_t : public demon_hunter_spell_t
+struct vengeful_retreat_t : public exergy_trigger_t<momentum_trigger_t<demon_hunter_spell_t>>
 {
   struct vengeful_retreat_damage_t : public demon_hunter_spell_t
   {
@@ -6304,7 +6350,7 @@ struct vengeful_retreat_t : public demon_hunter_spell_t
   };
 
   vengeful_retreat_t( demon_hunter_t* p, util::string_view options_str )
-    : demon_hunter_spell_t( "vengeful_retreat", p, p->talent.demon_hunter.vengeful_retreat, options_str )
+    : base_t( "vengeful_retreat", p, p->talent.demon_hunter.vengeful_retreat, options_str )
   {
     execute_action        = p->get_background_action<vengeful_retreat_damage_t>( "vengeful_retreat_damage" );
     execute_action->stats = stats;
@@ -6318,9 +6364,7 @@ struct vengeful_retreat_t : public demon_hunter_spell_t
 
   void execute() override
   {
-    p()->buff.momentum->trigger();
-
-    demon_hunter_spell_t::execute();
+    base_t::execute();
 
     // Fel Rush and VR shared a 1 second GCD when one or the other is triggered
     p()->cooldown.movement_shared->start( timespan_t::from_seconds( 1.0 ) );
@@ -6348,7 +6392,7 @@ struct vengeful_retreat_t : public demon_hunter_spell_t
     if ( p()->buffs.stormeaters_boon && p()->buffs.stormeaters_boon->check() )
       return false;
 
-    return demon_hunter_spell_t::ready();
+    return base_t::ready();
   }
 };
 
@@ -7394,6 +7438,12 @@ void demon_hunter_t::create_buffs()
                         ->set_default_value_from_effect_type( A_MOD_ALL_CRIT_CHANCE )
                         ->set_pct_buff_type( STAT_PCT_BUFF_CRIT );
 
+  buff.exergy = make_buff( this, "exergy", spec.exergy_buff );
+  buff.exergy->set_refresh_duration_callback( []( const buff_t* b, timespan_t d ) {
+    // TODO: Verify if this behavior is correct
+    return std::min( b->remains() + d, 30_s );  // Capped to 30 seconds
+  } );
+
   buff.momentum = make_buff( this, "momentum", spec.momentum_buff );
   buff.momentum->set_refresh_duration_callback( []( const buff_t* b, timespan_t d ) {
     return std::min( b->remains() + d, 30_s );  // Capped to 30 seconds
@@ -8156,6 +8206,7 @@ void demon_hunter_t::init_spells()
   talent.havoc.relentless_onslaught = find_talent_spell( talent_tree::SPECIALIZATION, "Relentless Onslaught" );
   talent.havoc.burning_wound        = find_talent_spell( talent_tree::SPECIALIZATION, "Burning Wound" );
 
+  talent.havoc.exergy        = find_talent_spell( talent_tree::SPECIALIZATION, "Exergy" );
   talent.havoc.momentum        = find_talent_spell( talent_tree::SPECIALIZATION, "Momentum" );
   talent.havoc.inertia         = find_talent_spell( talent_tree::SPECIALIZATION, "Inertia" );
   talent.havoc.chaos_theory    = find_talent_spell( talent_tree::SPECIALIZATION, "Chaos Theory" );
@@ -8314,6 +8365,7 @@ void demon_hunter_t::init_spells()
   spec.initiative_buff       = talent.havoc.initiative->ok() ? find_spell( 391215 ) : spell_data_t::not_found();
   spec.inner_demon_buff      = talent.havoc.inner_demon->ok() ? find_spell( 390145 ) : spell_data_t::not_found();
   spec.inner_demon_damage    = talent.havoc.inner_demon->ok() ? find_spell( 390137 ) : spell_data_t::not_found();
+  spec.exergy_buff           = talent.havoc.exergy->ok() ? find_spell( 208628 ) : spell_data_t::not_found();
   spec.momentum_buff         = talent.havoc.momentum->ok() ? find_spell( 208628 ) : spell_data_t::not_found();
   spec.inertia_buff          = talent.havoc.inertia->ok() ? find_spell( 427641 ) : spell_data_t::not_found();
   spec.ragefire_damage       = talent.havoc.ragefire->ok() ? find_spell( 390197 ) : spell_data_t::not_found();
