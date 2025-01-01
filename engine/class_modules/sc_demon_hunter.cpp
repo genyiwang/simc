@@ -326,6 +326,8 @@ public:
     buff_t* tww1_vengeance_4pc;
     buff_t* luck_of_the_draw;
     buff_t* winning_streak;
+    buff_t* winning_streak_residual;
+    buff_t* necessary_sacrifice;
   } buff;
 
   // Talents
@@ -734,6 +736,8 @@ public:
     // Auxilliary
     const spell_data_t* tww1_havoc_4pc_buff;
     const spell_data_t* tww1_vengeance_4pc_buff;
+    const spell_data_t* winning_streak_residual_buff;
+    const spell_data_t* necessary_sacrifice_buff;
   } set_bonuses;
 
   // Mastery Spells
@@ -1724,6 +1728,8 @@ public:
     ab::parse_effects( p()->buff.restless_hunter );
     ab::parse_effects( p()->buff.tww1_havoc_4pc );
     ab::parse_effects( p()->buff.winning_streak );
+    ab::parse_effects( p()->buff.winning_streak_residual );
+    ab::parse_effects( p()->buff.necessary_sacrifice );
 
     // Vengeance
     ab::parse_effects( p()->buff.soul_furnace_damage_amp );
@@ -5217,6 +5223,7 @@ struct blade_dance_base_t
     if ( p()->set_bonuses.tww2_havoc_2pc->ok() && p()->buff.winning_streak->up() &&
          rng().roll( p()->set_bonuses.tww2_havoc_2pc->effectN( 1 ).percent() ) )
     {
+      p()->buff.winning_streak_residual->trigger( p()->buff.winning_streak->stack() );
       p()->buff.winning_streak->expire();
       p()->proc.winning_streak_drop_from_tww2_havoc_2pc->occur();
     }
@@ -5532,6 +5539,7 @@ struct chaos_strike_base_t
     if ( p()->set_bonuses.tww2_havoc_2pc->ok() && p()->buff.winning_streak->up() &&
          rng().roll( p()->set_bonuses.tww2_havoc_2pc->effectN( 1 ).percent() ) )
     {
+      p()->buff.winning_streak_residual->trigger( p()->buff.winning_streak->stack() );
       p()->buff.winning_streak->expire();
       p()->proc.winning_streak_drop_from_tww2_havoc_2pc->occur();
     }
@@ -7086,6 +7094,12 @@ struct metamorphosis_buff_t : public demon_hunter_buff_t<buff_t>
     {
       p()->buff.enduring_torment->expire();
     }
+
+    if ( p()->set_bonuses.tww2_havoc_4pc->ok() )
+    {
+      p()->buff.necessary_sacrifice->trigger(p()->buff.winning_streak->stack());
+      p()->buff.winning_streak->expire();
+    }
   }
 
   void expire_override( int expiration_stacks, timespan_t remaining_duration ) override
@@ -7224,15 +7238,6 @@ struct luck_of_the_draw_buff_t : public demon_hunter_buff_t<buff_t>
       p()->cooldown.the_hunt->reset( true );
       p()->proc.the_hunt_reset_from_tww2_vengeance_4pc->occur();
     }
-  }
-};
-
-struct winning_streak_buff_t : public demon_hunter_buff_t<buff_t>
-{
-  winning_streak_buff_t( demon_hunter_t* p )
-    : base_t( *p, "winning_streak", p->set_bonuses.tww2_havoc_2pc->effectN( 1 ).trigger() )
-  {
-    base_t::set_default_value_from_effect_type( A_ADD_PCT_MODIFIER );
   }
 };
 
@@ -7816,7 +7821,9 @@ void demon_hunter_t::create_buffs()
                                 ->set_default_value_from_effect_type( A_ADD_PCT_MODIFIER, P_GENERIC );
 
   buff.luck_of_the_draw = make_buff<buffs::luck_of_the_draw_buff_t>( this );
-  buff.winning_streak   = make_buff<buffs::winning_streak_buff_t>( this );
+  buff.winning_streak   = make_buff( this, "winning_streak", set_bonuses.tww2_havoc_2pc->effectN( 1 ).trigger() );
+  buff.winning_streak_residual = make_buff( this, "winning_streak_residual", set_bonuses.winning_streak_residual_buff );
+  buff.necessary_sacrifice     = make_buff( this, "necessary_sacrifice", set_bonuses.necessary_sacrifice_buff );
 }
 
 struct metamorphosis_adjusted_cooldown_expr_t : public expr_t
@@ -8711,6 +8718,10 @@ void demon_hunter_t::init_spells()
   set_bonuses.tww1_havoc_4pc_buff = set_bonuses.tww1_havoc_4pc->ok() ? find_spell( 454628 ) : spell_data_t::not_found();
   set_bonuses.tww1_vengeance_4pc_buff =
       set_bonuses.tww1_vengeance_4pc->ok() ? find_spell( 454774 ) : spell_data_t::not_found();
+  set_bonuses.winning_streak_residual_buff =
+      set_bonuses.tww2_havoc_4pc->ok() ? find_spell( 1220706 ) : spell_data_t::not_found();
+  set_bonuses.necessary_sacrifice_buff =
+      set_bonuses.tww2_havoc_4pc->ok() ? find_spell( 1217055 ) : spell_data_t::not_found();
 
   // Spell Initialization ===================================================
 
