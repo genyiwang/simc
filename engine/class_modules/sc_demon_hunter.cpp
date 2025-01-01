@@ -862,6 +862,7 @@ public:
     // Set Bonuses
     proc_t* soul_fragment_from_vengeance_twws1_2pc;
     proc_t* metamorphosis_from_tww2_vengeance_2pc;
+    proc_t* the_hunt_reset_from_tww2_vengeance_4pc;
   } proc;
 
   // RPPM objects
@@ -6923,6 +6924,27 @@ struct fel_barrage_buff_t : public demon_hunter_buff_t<buff_t>
   }
 };
 
+struct luck_of_the_draw_buff_t : public demon_hunter_buff_t<buff_t>
+{
+  luck_of_the_draw_buff_t( demon_hunter_t* p )
+    : base_t( *p, "luck_of_the_draw", p->set_bonuses.tww2_vengeance_2pc->effectN( 1 ).trigger() )
+  {
+    base_t::set_default_value_from_effect_type( A_ADD_PCT_MODIFIER );
+  }
+
+  void bump( int stacks, double value ) override
+  {
+    buff_t::bump( stacks, value );
+
+    if ( p()->talent.demon_hunter.the_hunt->ok() && p()->set_bonuses.tww2_vengeance_4pc->ok() &&
+         rng().roll( p()->set_bonuses.tww2_vengeance_4pc->effectN( 1 ).percent() ) )
+    {
+      p()->cooldown.the_hunt->reset( true );
+      p()->proc.the_hunt_reset_from_tww2_vengeance_4pc->occur();
+    }
+  }
+};
+
 }  // end namespace buffs
 
 // Namespace Actions post buffs
@@ -7495,8 +7517,7 @@ void demon_hunter_t::create_buffs()
                                                                             : spell_data_t::not_found() )
                                 ->set_default_value_from_effect_type( A_ADD_PCT_MODIFIER, P_GENERIC );
 
-  buff.luck_of_the_draw = make_buff( this, "luck_of_the_draw", set_bonuses.tww2_vengeance_2pc->effectN( 1 ).trigger() )
-                              ->set_default_value_from_effect_type( A_ADD_PCT_MODIFIER );
+  buff.luck_of_the_draw = make_buff<buffs::luck_of_the_draw_buff_t>( this );
 }
 
 struct metamorphosis_adjusted_cooldown_expr_t : public expr_t
@@ -7829,6 +7850,7 @@ void demon_hunter_t::init_procs()
   // Set Bonuses
   proc.soul_fragment_from_vengeance_twws1_2pc = get_proc( "soul_fragment_from_vengeance_twws1_2pc" );
   proc.metamorphosis_from_tww2_vengeance_2pc  = get_proc( "metamorphosis_from_tww2_vengeance_2pc" );
+  proc.the_hunt_reset_from_tww2_vengeance_4pc = get_proc( "the_hunt_reset_from_tww2_vengeance_4pc" );
 }
 
 // demon_hunter_t::init_uptimes =============================================
