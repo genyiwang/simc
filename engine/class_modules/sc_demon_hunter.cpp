@@ -323,6 +323,7 @@ public:
     // Set Bonuses
     buff_t* tww1_havoc_4pc;
     buff_t* tww1_vengeance_4pc;
+    buff_t* luck_of_the_draw;
   } buff;
 
   // Talents
@@ -720,6 +721,8 @@ public:
     const spell_data_t* tww1_havoc_4pc;
     const spell_data_t* tww1_vengeance_2pc;
     const spell_data_t* tww1_vengeance_4pc;
+    const spell_data_t* tww2_vengeance_2pc;
+    const spell_data_t* tww2_vengeance_4pc;
 
     // Auxilliary
     const spell_data_t* tww1_havoc_4pc_buff;
@@ -858,6 +861,7 @@ public:
 
     // Set Bonuses
     proc_t* soul_fragment_from_vengeance_twws1_2pc;
+    proc_t* metamorphosis_from_tww2_vengeance_2pc;
   } proc;
 
   // RPPM objects
@@ -1011,6 +1015,7 @@ public:
                                               effect_type_t type           = E_APPLY_AURA );
   const spell_data_t* find_spell_override( const spell_data_t* base, const spell_data_t* passive );
   const spell_data_t* find_spell_override( const spell_data_t* base, std::vector<const spell_data_t*> passives );
+  const spell_data_t* conditional_spell_lookup( bool fn, int id );
   void set_out_of_range( timespan_t duration );
   void adjust_movement();
   double calculate_expected_max_health() const;
@@ -1709,6 +1714,7 @@ public:
     // Vengeance
     ab::parse_effects( p()->buff.soul_furnace_damage_amp );
     ab::parse_effects( p()->buff.tww1_vengeance_4pc );
+    ab::parse_effects( p()->buff.luck_of_the_draw );
 
     // Aldrachi Reaver
     ab::parse_effects( p()->buff.warblades_hunger );
@@ -2102,7 +2108,7 @@ struct demon_hunter_sigil_t : public demon_hunter_spell_t
     if ( hit_any_target && p()->talent.vengeance.cycle_of_binding->ok() )
     {
       // this is an event so that cooldown tracking occurs correctly
-      make_event( *p()->sim, 0_ms, [this]() {
+      make_event( *p()->sim, 0_ms, [ this ]() {
         std::vector<cooldown_t*> sigils_on_cooldown;
         range::copy_if( this->sigil_cooldowns, std::back_inserter( sigils_on_cooldown ),
                         []( cooldown_t* c ) { return c->down(); } );
@@ -2110,7 +2116,7 @@ struct demon_hunter_sigil_t : public demon_hunter_spell_t
         {
           sigil_cooldown->adjust( this->sigil_cooldown_adjust );
         }
-      });
+      } );
     }
   }
 
@@ -6996,6 +7002,46 @@ movement_buff_t::movement_buff_t( demon_hunter_t* p, util::string_view name, con
 }
 
 // ==========================================================================
+// Demon Hunter Proc Callbacks
+// ==========================================================================
+struct demon_hunter_proc_callback_t : public dbc_proc_callback_t
+{
+  demon_hunter_proc_callback_t( const special_effect_t& e ) : dbc_proc_callback_t( e.player, e )
+  {
+    initialize();
+    activate();
+  }
+
+  demon_hunter_t* p() const
+  {
+    return debug_cast<demon_hunter_t*>( listener );
+  }
+  demon_hunter_t* p()
+  {
+    return debug_cast<demon_hunter_t*>( listener );
+  }
+};
+
+void tww2_vengeance_2pc( const special_effect_t& e )
+{
+  struct tww2_vengeance_2pc : demon_hunter_proc_callback_t
+  {
+    tww2_vengeance_2pc( const special_effect_t& e ) : demon_hunter_proc_callback_t( e )
+    {
+    }
+
+    void execute( action_t*, action_state_t* ) override
+    {
+      p()->buff.metamorphosis->trigger( p()->set_bonuses.tww2_vengeance_2pc->effectN( 1 ).time_value() );
+      p()->buff.luck_of_the_draw->trigger();
+      p()->proc.metamorphosis_from_tww2_vengeance_2pc->occur();
+    }
+  };
+
+  new tww2_vengeance_2pc( e );
+}
+
+// ==========================================================================
 // Targetdata Definitions
 // ==========================================================================
 
@@ -7395,13 +7441,12 @@ void demon_hunter_t::create_buffs()
     buff.enduring_torment->set_default_value_from_effect_type( A_HASTE_ALL )->set_pct_buff_type( STAT_PCT_BUFF_HASTE );
   }
 
-  buff.monster_rising =
-      make_buff( this, "monster_rising", hero_spec.monster_rising_buff )
-          ->set_default_value_from_effect_type( A_MOD_TOTAL_STAT_PERCENTAGE )
-          ->set_pct_buff_type( STAT_PCT_BUFF_AGILITY )
-          ->set_allow_precombat( true )
-          ->set_constant_behavior( buff_constant_behavior::NEVER_CONSTANT )
-          ->add_invalidate( CACHE_AGILITY );
+  buff.monster_rising = make_buff( this, "monster_rising", hero_spec.monster_rising_buff )
+                            ->set_default_value_from_effect_type( A_MOD_TOTAL_STAT_PERCENTAGE )
+                            ->set_pct_buff_type( STAT_PCT_BUFF_AGILITY )
+                            ->set_allow_precombat( true )
+                            ->set_constant_behavior( buff_constant_behavior::NEVER_CONSTANT )
+                            ->add_invalidate( CACHE_AGILITY );
 
   buff.pursuit_of_angryness =
       make_buff( this, "pursuit_of_angriness", talent.felscarred.pursuit_of_angriness )
@@ -7449,6 +7494,9 @@ void demon_hunter_t::create_buffs()
                                        set_bonuses.tww1_vengeance_4pc->ok() ? set_bonuses.tww1_vengeance_4pc_buff
                                                                             : spell_data_t::not_found() )
                                 ->set_default_value_from_effect_type( A_ADD_PCT_MODIFIER, P_GENERIC );
+
+  buff.luck_of_the_draw = make_buff( this, "luck_of_the_draw", set_bonuses.tww2_vengeance_2pc->effectN( 1 ).trigger() )
+                              ->set_default_value_from_effect_type( A_ADD_PCT_MODIFIER );
 }
 
 struct metamorphosis_adjusted_cooldown_expr_t : public expr_t
@@ -7780,6 +7828,7 @@ void demon_hunter_t::init_procs()
 
   // Set Bonuses
   proc.soul_fragment_from_vengeance_twws1_2pc = get_proc( "soul_fragment_from_vengeance_twws1_2pc" );
+  proc.metamorphosis_from_tww2_vengeance_2pc  = get_proc( "metamorphosis_from_tww2_vengeance_2pc" );
 }
 
 // demon_hunter_t::init_uptimes =============================================
@@ -7804,6 +7853,19 @@ void demon_hunter_t::init_resources( bool force )
 void demon_hunter_t::init_special_effects()
 {
   base_t::init_special_effects();
+
+  if ( set_bonuses.tww2_vengeance_2pc->ok() )
+  {
+    auto set_data     = set_bonuses.tww2_vengeance_2pc;
+    auto set          = new special_effect_t( this );
+    set->name_str     = set_data->name_cstr();
+    set->spell_id     = set_data->id();
+    set->type         = SPECIAL_EFFECT_EQUIP;
+    set->proc_flags2_ = PF2_ALL_HIT;
+    special_effects.push_back( set );
+
+    tww2_vengeance_2pc( *set );
+  }
 }
 
 // demon_hunter_t::init_rng =================================================
@@ -8301,6 +8363,8 @@ void demon_hunter_t::init_spells()
   set_bonuses.tww1_havoc_4pc     = sets->set( DEMON_HUNTER_HAVOC, TWW1, B4 );
   set_bonuses.tww1_vengeance_2pc = sets->set( DEMON_HUNTER_VENGEANCE, TWW1, B2 );
   set_bonuses.tww1_vengeance_4pc = sets->set( DEMON_HUNTER_VENGEANCE, TWW1, B4 );
+  set_bonuses.tww2_vengeance_2pc = sets->set( DEMON_HUNTER_VENGEANCE, TWW2, B2 );
+  set_bonuses.tww2_vengeance_4pc = sets->set( DEMON_HUNTER_VENGEANCE, TWW2, B4 );
 
   // Set Bonus Auxilliary ===================================================
 
@@ -9482,6 +9546,15 @@ const spell_data_t* demon_hunter_t::find_spell_override( const spell_data_t* bas
   }
 
   return base;
+}
+
+const spell_data_t* demon_hunter_t::conditional_spell_lookup( bool fn, int id )
+{
+  if ( !fn )
+  {
+    return spell_data_t::not_found();
+  }
+  return find_spell( id );
 }
 
 /* Report Extension Class
