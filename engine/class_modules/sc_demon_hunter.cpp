@@ -2334,7 +2334,7 @@ struct momentum_trigger_t : public BASE
 
   void execute() override
   {
-    if (can_trigger_momentum())
+    if ( can_trigger_momentum() )
       BASE::p()->buff.momentum->trigger();
 
     BASE::execute();
@@ -2358,10 +2358,61 @@ struct exergy_trigger_t : public BASE
 
   void execute() override
   {
-    if (can_trigger_exergy())
+    if ( can_trigger_exergy() )
       BASE::p()->buff.exergy->trigger();
 
     BASE::execute();
+  }
+};
+
+template <typename BASE>
+struct inertia_trigger_trigger_t : public BASE
+{
+  using base_t = inertia_trigger_trigger_t<BASE>;
+
+  inertia_trigger_trigger_t( util::string_view n, demon_hunter_t* p, const spell_data_t* s, util::string_view o )
+    : BASE( n, p, s, o )
+  {
+  }
+
+  virtual bool can_trigger_inertia_trigger()
+  {
+    return BASE::p()->is_ptr() && BASE::p()->talent.havoc.inertia->ok();
+  }
+
+  void execute() override
+  {
+    BASE::execute();
+
+    if ( can_trigger_inertia_trigger() )
+      BASE::p()->buff.inertia_trigger->trigger();
+  }
+};
+
+template <typename BASE>
+struct inertia_trigger_t : public BASE
+{
+  using base_t = inertia_trigger_t<BASE>;
+
+  inertia_trigger_t( util::string_view n, demon_hunter_t* p, const spell_data_t* s, util::string_view o )
+    : BASE( n, p, s, o )
+  {
+  }
+
+  virtual bool can_trigger_inertia()
+  {
+    return BASE::p()->is_ptr() && BASE::p()->talent.havoc.inertia->ok() && BASE::p()->buff.inertia_trigger->up();
+  }
+
+  void execute() override
+  {
+    BASE::execute();
+
+    if ( can_trigger_inertia() )
+    {
+      BASE::p()->buff.inertia_trigger->expire();
+      BASE::p()->buff.inertia->trigger();
+    }
   }
 };
 
@@ -4402,7 +4453,7 @@ struct sigil_of_spite_t : public demon_hunter_spell_t
 
 // The Hunt =================================================================
 
-struct the_hunt_t : public exergy_trigger_t<momentum_trigger_t<demon_hunter_spell_t>>
+struct the_hunt_t : public inertia_trigger_trigger_t<exergy_trigger_t<momentum_trigger_t<demon_hunter_spell_t>>>
 {
   struct the_hunt_damage_t : public demon_hunter_spell_t
   {
@@ -5713,7 +5764,7 @@ struct felblade_t : public demon_hunter_attack_t
 
 // Fel Rush =================================================================
 
-struct fel_rush_t : public momentum_trigger_t<demon_hunter_attack_t>
+struct fel_rush_t : public inertia_trigger_t<momentum_trigger_t<demon_hunter_attack_t>>
 {
   struct fel_rush_damage_t : public demon_hunter_spell_t
   {
@@ -5763,7 +5814,7 @@ struct fel_rush_t : public momentum_trigger_t<demon_hunter_attack_t>
   {
     base_t::execute();
 
-    if ( p()->buff.inertia_trigger->up() && p()->talent.havoc.inertia->ok() )
+    if ( !p()->is_ptr() && p()->talent.havoc.inertia->ok() && p()->buff.inertia_trigger->up() )
     {
       p()->buff.inertia_trigger->expire();
       p()->buff.inertia->trigger();
@@ -6321,7 +6372,7 @@ struct burning_blades_t
 
 // Vengeful Retreat =========================================================
 
-struct vengeful_retreat_t : public exergy_trigger_t<momentum_trigger_t<demon_hunter_spell_t>>
+struct vengeful_retreat_t : public inertia_trigger_trigger_t<exergy_trigger_t<momentum_trigger_t<demon_hunter_spell_t>>>
 {
   struct vengeful_retreat_damage_t : public demon_hunter_spell_t
   {
@@ -6679,7 +6730,7 @@ struct immolation_aura_buff_t : public demon_hunter_buff_t<buff_t>
       if ( p()->talent.havoc.unbound_chaos->ok() )
       {
         p()->buff.unbound_chaos->trigger();
-        if ( p()->talent.havoc.inertia->ok() )
+        if ( !p()->is_ptr() && p()->talent.havoc.inertia->ok() )
         {
           p()->buff.inertia_trigger->trigger();
         }
@@ -7937,9 +7988,9 @@ void demon_hunter_t::init_procs()
   // Fel-scarred
 
   // Set Bonuses
-  proc.soul_fragment_from_vengeance_twws1_2pc = get_proc( "soul_fragment_from_vengeance_twws1_2pc" );
-  proc.metamorphosis_from_tww2_vengeance_2pc  = get_proc( "metamorphosis_from_tww2_vengeance_2pc" );
-  proc.the_hunt_reset_from_tww2_vengeance_4pc = get_proc( "the_hunt_reset_from_tww2_vengeance_4pc" );
+  proc.soul_fragment_from_vengeance_twws1_2pc  = get_proc( "soul_fragment_from_vengeance_twws1_2pc" );
+  proc.metamorphosis_from_tww2_vengeance_2pc   = get_proc( "metamorphosis_from_tww2_vengeance_2pc" );
+  proc.the_hunt_reset_from_tww2_vengeance_4pc  = get_proc( "the_hunt_reset_from_tww2_vengeance_4pc" );
   proc.winning_streak_drop_from_tww2_havoc_2pc = get_proc( "winning_streak_drop_from_tww2_havoc_2pc" );
 }
 
@@ -8206,7 +8257,7 @@ void demon_hunter_t::init_spells()
   talent.havoc.relentless_onslaught = find_talent_spell( talent_tree::SPECIALIZATION, "Relentless Onslaught" );
   talent.havoc.burning_wound        = find_talent_spell( talent_tree::SPECIALIZATION, "Burning Wound" );
 
-  talent.havoc.exergy        = find_talent_spell( talent_tree::SPECIALIZATION, "Exergy" );
+  talent.havoc.exergy          = find_talent_spell( talent_tree::SPECIALIZATION, "Exergy" );
   talent.havoc.momentum        = find_talent_spell( talent_tree::SPECIALIZATION, "Momentum" );
   talent.havoc.inertia         = find_talent_spell( talent_tree::SPECIALIZATION, "Inertia" );
   talent.havoc.chaos_theory    = find_talent_spell( talent_tree::SPECIALIZATION, "Chaos Theory" );
