@@ -7097,7 +7097,7 @@ struct metamorphosis_buff_t : public demon_hunter_buff_t<buff_t>
 
     if ( p()->set_bonuses.tww2_havoc_4pc->ok() )
     {
-      p()->buff.necessary_sacrifice->trigger(p()->buff.winning_streak->stack());
+      p()->buff.necessary_sacrifice->trigger( p()->buff.winning_streak->stack() );
       p()->buff.winning_streak->expire();
     }
   }
@@ -7821,9 +7821,11 @@ void demon_hunter_t::create_buffs()
                                 ->set_default_value_from_effect_type( A_ADD_PCT_MODIFIER, P_GENERIC );
 
   buff.luck_of_the_draw = make_buff<buffs::luck_of_the_draw_buff_t>( this );
-  buff.winning_streak   = make_buff( this, "winning_streak", set_bonuses.tww2_havoc_2pc->effectN( 1 ).trigger() );
-  buff.winning_streak_residual = make_buff( this, "winning_streak_residual", set_bonuses.winning_streak_residual_buff );
-  buff.necessary_sacrifice     = make_buff( this, "necessary_sacrifice", set_bonuses.necessary_sacrifice_buff );
+  buff.winning_streak =
+      make_buff( this, "winning_streak", set_bonuses.tww2_havoc_2pc->effectN( 1 ).trigger() )->set_chance( 1.01 );
+  buff.winning_streak_residual =
+      make_buff( this, "winning_streak_residual", set_bonuses.winning_streak_residual_buff )->set_chance( 1.01 );
+  buff.necessary_sacrifice = make_buff( this, "necessary_sacrifice", set_bonuses.necessary_sacrifice_buff );
 }
 
 struct metamorphosis_adjusted_cooldown_expr_t : public expr_t
