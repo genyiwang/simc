@@ -4967,7 +4967,7 @@ struct shattering_star_t : public evoker_spell_t
   {
     evoker_spell_t::execute();
 
-    if ( p()->talent.arcane_vigor.ok() )
+    if ( p()->talent.arcane_vigor.ok() && !background )
     {
       p()->buff.essence_burst->trigger();
     }
