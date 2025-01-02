@@ -5918,14 +5918,14 @@ void the_jastor_diamond( special_effect_t& effect )
       max_fake_stacks = as<int>( p->find_spell( 1214161 )->effectN( 2 ).base_value() );
     }
 
-    void add_stat( stat_e s, double val )
+    void add_ally_stat( stat_e s, double val )
     {
       if ( ++fake_stacks < max_fake_stacks )
       {
         auto& buff_stat = get_stat( s );
         buff_stat.current_value += val;
         buff_stat.amount = buff_stat.current_value;
-        // Only handle stat gain here, stat loss will be handled in stat_buff_t::expire_override()
+        // Only handle stat gain here, stat loss will be handled in i_did_that_buff_t::expire_override()
         player->stat_gain( buff_stat.stat, val, stat_gain, nullptr, buff_duration() > timespan_t::zero() );
       }
     }
@@ -6003,7 +6003,7 @@ void the_jastor_diamond( special_effect_t& effect )
       else
       {
         auto stat_roll = rng().range( secondary_ratings );
-        self_buff->add_stat( stat_roll, buff_value );
+        self_buff->add_ally_stat( stat_roll, buff_value );
         self_buff->trigger();
       }
     }
