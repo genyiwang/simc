@@ -6088,6 +6088,9 @@ void geargrinders_remote( special_effect_t& effect )
 // 1218713 Buff
 void improvised_seaforium_pacemaker( special_effect_t& effect )
 {
+  if ( !effect.player->is_ptr() )
+    return;
+
   auto buff_spell = effect.player->find_spell( 1218713 );
   auto buff       = create_buff<stat_buff_t>( effect.player, buff_spell )
                   ->set_stat_from_effect_type( A_MOD_RATING, effect.driver()->effectN( 1 ).average( effect ) );
