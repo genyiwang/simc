@@ -6010,6 +6010,9 @@ void cirral_concoctory( special_effect_t& effect )
 // 1216594 Heal
 void eye_of_kezan( special_effect_t& effect )
 {
+  if ( !effect.player->is_ptr() )
+    return;
+
   struct eye_of_kezan_cb_t : public dbc_proc_callback_t
   {
     buff_t* stat_buff;
@@ -6030,6 +6033,7 @@ void eye_of_kezan( special_effect_t& effect )
 
       damage              = create_proc_action<generic_proc_t>( "wrath_of_kezan", e, e.player->find_spell( 1216593 ) );
       damage->base_dd_min = damage->base_dd_max = e.driver()->effectN( 2 ).average( e );
+      damage->base_multiplier *= role_mult( e );
 
       heal              = new heal_t( "vigor_of_kezan", e.player, e.player->find_spell( 1216594 ) );
       heal->base_dd_min = heal->base_dd_max = e.driver()->effectN( 3 ).average( e );
@@ -6056,6 +6060,27 @@ void eye_of_kezan( special_effect_t& effect )
   };
 
   new eye_of_kezan_cb_t( effect );
+}
+
+// Geargrinder's Remoite
+// 471059 Driver
+// 471058 Value
+// 472030 Damage
+void geargrinders_remote( special_effect_t& effect )
+{
+  if ( !effect.player->is_ptr() )
+    return;
+
+  auto value_spell = effect.player->find_spell( 471058 );
+  assert( value_spell && "Geargrinder's Remote missing Value spell" );
+  auto damage_spell = effect.player->find_spell( 472030 );
+  assert( damage_spell && "Geargrinder's Remote missing Damage spell" );
+
+  auto damage = create_proc_action<generic_aoe_proc_t>( "blaze_of_glory", effect, damage_spell, true );
+  damage->base_dd_min = damage->base_dd_max = value_spell->effectN( 1 ).average( effect );
+  damage->base_multiplier *= role_mult( effect );
+
+  effect.execute_action = damage;
 }
 
 // 470641 driver, trigger damage
@@ -8225,6 +8250,7 @@ void register_special_effects()
   register_special_effect( 466681, items::house_of_cards );
   register_special_effect( 443559, items::cirral_concoctory );
   register_special_effect( 469888, items::eye_of_kezan );
+  register_special_effect( 471059, items::geargrinders_remote );
 
   // Weapons
   register_special_effect( 443384, items::fateweaved_needle );
