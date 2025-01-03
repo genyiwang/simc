@@ -6003,6 +6003,61 @@ void cirral_concoctory( special_effect_t& effect )
     new cirral_concoctory_cb_t( effect );
 }
 
+// Eye of Kezan
+// 469888 Driver
+// 469889 Buff
+// 1216593 Damage
+// 1216594 Heal
+void eye_of_kezan( special_effect_t& effect )
+{
+  struct eye_of_kezan_cb_t : public dbc_proc_callback_t
+  {
+    buff_t* stat_buff;
+    action_t* damage;
+    action_t* heal;
+
+    eye_of_kezan_cb_t( const special_effect_t& e )
+      : dbc_proc_callback_t( e.player, e ), stat_buff( nullptr ), damage( nullptr ), heal( nullptr )
+    {
+      stat_buff = create_buff<stat_buff_t>( e.player, e.player->find_spell( 469889 ) )
+                      ->add_stat_from_effect_type( A_MOD_STAT, e.driver()->effectN( 1 ).average( e ) )
+                      ->set_tick_callback( []( buff_t* b, int, timespan_t ) {
+                        if ( !b->source->in_combat )
+                        {
+                          make_event( *b->source->sim, 0_ms, [ b ] { b->decrement(); } );
+                        }
+                      } );
+
+      damage              = create_proc_action<generic_proc_t>( "wrath_of_kezan", e, e.player->find_spell( 1216593 ) );
+      damage->base_dd_min = damage->base_dd_max = e.driver()->effectN( 2 ).average( e );
+
+      heal              = new heal_t( "vigor_of_kezan", e.player, e.player->find_spell( 1216594 ) );
+      heal->base_dd_min = heal->base_dd_max = e.driver()->effectN( 3 ).average( e );
+    }
+
+    void execute( action_t*, action_state_t* s ) override
+    {
+      if ( !stat_buff->at_max_stacks() )
+      {
+        stat_buff->trigger();
+        return;
+      }
+
+      switch ( s->target->is_enemy() )
+      {
+        case true:
+          damage->execute();
+          break;
+        case false:
+          heal->execute_on_target( s->target );
+          break;
+      }
+    }
+  };
+
+  new eye_of_kezan_cb_t( effect );
+}
+
 // 470641 driver, trigger damage
 // 470642 damage
 // 470643 reflect, NYI
@@ -6492,6 +6547,8 @@ void the_jastor_diamond( special_effect_t& effect )
         if ( buff_stat.stat == s )
           return buff_stat;
       }
+      // Fallback if the above fails for any reason.
+      return stats[ 0 ];
     }
 
     void bump( int stacks, double /* value */ ) override
@@ -6527,7 +6584,7 @@ void the_jastor_diamond( special_effect_t& effect )
     void execute( action_t*, action_state_t* ) override
     {
       // TODO: Implement triggering the ally buff if a friendly player exists in the sim
-      if ( rng().roll( value_spell->effectN( 3 ).percent() ) )
+      if ( self_buff->check() && rng().roll( value_spell->effectN( 3 ).percent() ) )
       {
         self_buff->expire();
       }
@@ -8167,6 +8224,7 @@ void register_special_effects()
   register_special_effect( 470286, items::torqs_big_red_button );
   register_special_effect( 466681, items::house_of_cards );
   register_special_effect( 443559, items::cirral_concoctory );
+  register_special_effect( 469888, items::eye_of_kezan );
 
   // Weapons
   register_special_effect( 443384, items::fateweaved_needle );
