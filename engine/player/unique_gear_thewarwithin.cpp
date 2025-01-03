@@ -5994,7 +5994,7 @@ void the_jastor_diamond( special_effect_t& effect )
     void execute( action_t*, action_state_t* ) override
     {
       // TODO: Implement triggering the ally buff if a friendly player exists in the sim
-      if ( rng().roll( value_spell->effectN( 4 ).percent() ) )
+      if ( rng().roll( value_spell->effectN( 3 ).percent() ) )
       {
         self_buff->expire();
       }
