@@ -6062,7 +6062,7 @@ void eye_of_kezan( special_effect_t& effect )
   new eye_of_kezan_cb_t( effect );
 }
 
-// Geargrinder's Remoite
+// Geargrinder's Remote
 // 471059 Driver
 // 471058 Value
 // 472030 Damage
@@ -6081,6 +6081,57 @@ void geargrinders_remote( special_effect_t& effect )
   damage->base_multiplier *= role_mult( effect );
 
   effect.execute_action = damage;
+}
+
+// Improvised Seaforium Pacemaker
+// 1218714 Driver
+// 1218713 Buff
+void improvised_seaforium_pacemaker( special_effect_t& effect )
+{
+  auto buff_spell = effect.player->find_spell( 1218713 );
+  auto buff       = create_buff<stat_buff_t>( effect.player, buff_spell )
+                  ->set_stat_from_effect_type( A_MOD_RATING, effect.driver()->effectN( 1 ).average( effect ) );
+
+  struct explosive_adrenaline_cb_t : public dbc_proc_callback_t
+  {
+    buff_t* buff;
+    int max_extensions;
+    int extensions;
+    explosive_adrenaline_cb_t( const special_effect_t& e, buff_t* b )
+      : dbc_proc_callback_t( e.player, e ), buff( b ), max_extensions( 0 ), extensions( 0 )
+    {
+      // Max extensions doesnt appear to be in spell data, basing it off tooltip for now.
+      max_extensions = 15;
+      buff->set_expire_callback( [ & ]( buff_t*, int, timespan_t ) { extensions = 0; } );
+    }
+
+    void execute( action_t*, action_state_t* ) override
+    {
+      if ( extensions++ < max_extensions )
+      {
+        // Duration extension doesnt appear to be in spell data. Manually setting for now.
+        buff->extend_duration( listener, 1_s );
+      }
+    }
+
+    void reset() override
+    {
+      extensions = 0;
+    }
+  };
+
+  auto buff_extension          = new special_effect_t( effect.player );
+  buff_extension->name_str     = buff_spell->name_cstr();
+  buff_extension->spell_id     = buff_spell->id();
+  buff_extension->proc_flags_  = PF_ALL_DAMAGE | PF_ALL_HEAL;
+  buff_extension->proc_flags2_ = PF2_CRIT;
+  effect.player->special_effects.push_back( buff_extension );
+
+  auto cb = new explosive_adrenaline_cb_t( *buff_extension, buff );
+  cb->activate_with_buff( buff );
+
+  effect.cooldown_ = timespan_t::from_seconds( effect.driver()->effectN( 2 ).base_value() );
+  new dbc_proc_callback_t( effect.player, effect );
 }
 
 // 470641 driver, trigger damage
@@ -6533,7 +6584,7 @@ void the_jastor_diamond( special_effect_t& effect )
 
     void add_ally_stat( stat_e s, double val )
     {
-      if ( ++fake_stacks < max_fake_stacks )
+      if ( fake_stacks++ < max_fake_stacks )
       {
         auto& buff_stat = get_stat( s );
         buff_stat.current_value += val;
@@ -8251,6 +8302,7 @@ void register_special_effects()
   register_special_effect( 443559, items::cirral_concoctory );
   register_special_effect( 469888, items::eye_of_kezan );
   register_special_effect( 471059, items::geargrinders_remote );
+  register_special_effect( 1218714, items::improvised_seaforium_pacemaker );
 
   // Weapons
   register_special_effect( 443384, items::fateweaved_needle );
