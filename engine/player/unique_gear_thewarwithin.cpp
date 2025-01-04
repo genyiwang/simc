@@ -6636,6 +6636,7 @@ void the_jastor_diamond( special_effect_t& effect )
       : jastor_diamond_buff_base_t( p, n, s ), fake_stacks( 0 ), max_fake_stacks( 0 )
     {
       max_fake_stacks = as<int>( p->find_spell( 1214161 )->effectN( 2 ).base_value() );
+      set_constant_behavior( buff_constant_behavior::NEVER_CONSTANT );
     }
 
     void add_ally_stat( stat_e s, double val ) override
