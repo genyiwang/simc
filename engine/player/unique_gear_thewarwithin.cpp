@@ -6679,7 +6679,6 @@ void the_jastor_diamond( special_effect_t& effect )
     const spell_data_t* value_spell;
     const spell_data_t* ally_buff_spell;
     double buff_value;
-    bool first;
     std::unordered_map<player_t*, no_i_did_that_buff_t*> ally_buffs;
     vector_with_callback<player_t*> ally_list;
 
@@ -6689,13 +6688,26 @@ void the_jastor_diamond( special_effect_t& effect )
         value_spell( e.player->find_spell( 1214161 ) ),
         ally_buff_spell( e.player->find_spell( 1214826 ) ),
         buff_value( 0 ),
-        first( true ),
-        ally_buffs()
+        ally_buffs(),
+        ally_list()
     {
       assert( value_spell && "The Jastor Diamond missing value spell." );
       buff_value = value_spell->effectN( 1 ).average( e );
 
       self_buff = create_buff<i_did_that_buff_t>( e.player, "i_did_that", e.player->find_spell( 1214823 ) );
+
+      e.player->register_precombat_begin( [ & ]( player_t* p ) {
+        if ( p->sim->player_no_pet_list.size() > 1 && !p->sim->single_actor_batch )
+        {
+          ally_list = p->sim->player_no_pet_list;
+          ally_list.find_and_erase( p );
+          for ( auto& ally : ally_list )
+          {
+            auto ally_buff = create_buff<no_i_did_that_buff_t>( ally, "no_i_did_that", ally_buff_spell );
+            ally_buffs.insert( { { ally }, { ally_buff } } );
+          }
+        }
+      } );
     }
 
     player_t* pick_random_target()
@@ -6711,20 +6723,8 @@ void the_jastor_diamond( special_effect_t& effect )
 
     void execute( action_t*, action_state_t* ) override
     {
-      if ( listener->sim->player_no_pet_list.size() > 1 )
+      if ( ally_list.size() > 0 )
       {
-        if ( first )
-        {
-          first     = false;
-          ally_list = listener->sim->player_no_pet_list;
-          ally_list.find_and_erase( listener );
-          for ( auto& ally : ally_list )
-          {
-            auto ally_buff = create_buff<no_i_did_that_buff_t>( ally, "no_i_did_that", ally_buff_spell );
-            ally_buffs.insert( { { ally }, { ally_buff } } );
-          }
-        }
-
         player_t* random_target = pick_random_target();
         if ( self_buff->check() && rng().roll( value_spell->effectN( 3 ).percent() ) )
         {
@@ -6757,12 +6757,6 @@ void the_jastor_diamond( special_effect_t& effect )
           self_buff->trigger();
         }
       }
-    }
-
-    void reset() override
-    {
-      first = true;
-      dbc_proc_callback_t::reset();
     }
   };
 
