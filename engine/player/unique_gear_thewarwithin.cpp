@@ -6570,43 +6570,28 @@ void the_jastor_diamond( special_effect_t& effect )
   if ( !effect.player->is_ptr() )
     return;
 
-  struct i_did_that_buff_t : public stat_buff_t
+  struct jastor_diamond_buff_base_t : public stat_buff_t
   {
-    int fake_stacks;
-    int max_fake_stacks;
-
-    i_did_that_buff_t( player_t* p, std::string_view n, const spell_data_t* s ) : stat_buff_t( p, n, s ), fake_stacks( 0 ), max_fake_stacks( 0 )
+    jastor_diamond_buff_base_t( player_t* p, std::string_view n, const spell_data_t* s ) : stat_buff_t( p, n, s )
     {
       set_default_value( 0 );
       add_stat_from_effect( 1, 0 );
       add_stat_from_effect( 2, 0 );
       add_stat_from_effect( 3, 0 );
       add_stat_from_effect( 4, 0 );
-      max_fake_stacks = as<int>( p->find_spell( 1214161 )->effectN( 2 ).base_value() );
     }
 
-    void add_ally_stat( stat_e s, double val )
+    virtual void add_ally_stat( stat_e s, double val )
     {
-      if ( fake_stacks++ < max_fake_stacks )
-      {
-        auto& buff_stat = get_stat( s );
-        buff_stat.current_value += val;
-        buff_stat.amount = buff_stat.current_value;
-        // Only handle stat gain here, stat loss will be handled in i_did_that_buff_t::expire_override()
-        player->stat_gain( buff_stat.stat, val, stat_gain, nullptr, buff_duration() > timespan_t::zero() );
-      }
-    }
-
-    void reset() override
-    {
-      stat_buff_t::reset();
-      fake_stacks = 0;
+      auto& buff_stat = get_stat( s );
+      buff_stat.current_value += val;
+      buff_stat.amount = buff_stat.current_value;
+      // Only handle stat gain here, stat loss will be handled in i_did_that_buff_t::expire_override()
+      player->stat_gain( buff_stat.stat, val, stat_gain, nullptr, buff_duration() > timespan_t::zero() );
     }
 
     void expire_override( int s, timespan_t d ) override
     {
-      fake_stacks = 0;
-
       for ( auto& buff_stat : stats )
       {
         player->stat_loss( buff_stat.stat, buff_stat.current_value, stat_gain, nullptr,
@@ -6636,9 +6621,55 @@ void the_jastor_diamond( special_effect_t& effect )
       buff_t::bump( stacks );
     }
 
-    double buff_stat_stack_amount( const buff_stat_t&, int) const override
+    double buff_stat_stack_amount( const buff_stat_t&, int ) const override
     {
       return 0;
+    }
+  };
+
+  struct i_did_that_buff_t : public jastor_diamond_buff_base_t
+  {
+    int fake_stacks;
+    int max_fake_stacks;
+
+    i_did_that_buff_t( player_t* p, std::string_view n, const spell_data_t* s )
+      : jastor_diamond_buff_base_t( p, n, s ), fake_stacks( 0 ), max_fake_stacks( 0 )
+    {
+      max_fake_stacks = as<int>( p->find_spell( 1214161 )->effectN( 2 ).base_value() );
+    }
+
+    void add_ally_stat( stat_e s, double val ) override
+    {
+      if ( fake_stacks++ < max_fake_stacks )
+      {
+        jastor_diamond_buff_base_t::add_ally_stat( s, val );
+      }
+    }
+
+    double get_current_stat_value( stat_e s )
+    {
+      auto stat = get_stat( s );
+      return stat.current_value;
+    }
+
+    void reset() override
+    {
+      jastor_diamond_buff_base_t::reset();
+      fake_stacks = 0;
+    }
+
+    void expire_override( int s, timespan_t d ) override
+    {
+      fake_stacks = 0;
+      jastor_diamond_buff_base_t::expire_override( s, d );
+    }
+  };
+
+  struct no_i_did_that_buff_t : public jastor_diamond_buff_base_t
+  {
+    no_i_did_that_buff_t( player_t* p, std::string_view n, const spell_data_t* s )
+      : jastor_diamond_buff_base_t( p, n, s )
+    {
     }
   };
 
@@ -6646,13 +6677,20 @@ void the_jastor_diamond( special_effect_t& effect )
   {
     i_did_that_buff_t* self_buff;
     const spell_data_t* value_spell;
+    const spell_data_t* ally_buff_spell;
     double buff_value;
+    bool first;
+    std::unordered_map<player_t*, no_i_did_that_buff_t*> ally_buffs;
+    vector_with_callback<player_t*> ally_list;
 
     the_jastor_diamond_cb_t( const special_effect_t& e )
       : dbc_proc_callback_t( e.player, e ),
         self_buff( nullptr ),
         value_spell( e.player->find_spell( 1214161 ) ),
-        buff_value( 0 )
+        ally_buff_spell( e.player->find_spell( 1214826 ) ),
+        buff_value( 0 ),
+        first( true ),
+        ally_buffs()
     {
       assert( value_spell && "The Jastor Diamond missing value spell." );
       buff_value = value_spell->effectN( 1 ).average( e );
@@ -6660,21 +6698,71 @@ void the_jastor_diamond( special_effect_t& effect )
       self_buff = create_buff<i_did_that_buff_t>( e.player, "i_did_that", e.player->find_spell( 1214823 ) );
     }
 
+    player_t* pick_random_target()
+    {
+      player_t* random_target = ally_list[ rng().range( ally_list.size() ) ];
+
+      if ( random_target->is_sleeping() )
+        pick_random_target();
+
+      else
+        return random_target;
+    }
+
     void execute( action_t*, action_state_t* ) override
     {
-      // TODO: Implement triggering the ally buff if a friendly player exists in the sim
-      if ( self_buff->check() && rng().roll( value_spell->effectN( 3 ).percent() ) )
+      if ( listener->sim->player_no_pet_list.size() > 1 )
       {
-        self_buff->expire();
-      }
+        if ( first )
+        {
+          first     = false;
+          ally_list = listener->sim->player_no_pet_list;
+          ally_list.find_and_erase( listener );
+          for ( auto& ally : ally_list )
+          {
+            auto ally_buff = create_buff<no_i_did_that_buff_t>( ally, "no_i_did_that", ally_buff_spell );
+            ally_buffs.insert( { { ally }, { ally_buff } } );
+          }
+        }
 
-      // TODO: Implement checking friendly players highest stat if a friendly player exists in the sim
+        player_t* random_target = pick_random_target();
+        if ( self_buff->check() && rng().roll( value_spell->effectN( 3 ).percent() ) )
+        {
+          no_i_did_that_buff_t* buff = ally_buffs.at( random_target );
+          for ( auto stat : secondary_ratings )
+          {
+            double val = self_buff->get_current_stat_value( stat );
+            buff->add_ally_stat( stat, val );
+          }
+          buff->trigger();
+          self_buff->expire();
+        }
+        else
+        {
+          auto stat = util::highest_stat( random_target, secondary_ratings );
+          self_buff->add_ally_stat( stat, buff_value );
+          self_buff->trigger();
+        }
+      }
       else
       {
-        auto stat_roll = rng().range( secondary_ratings );
-        self_buff->add_ally_stat( stat_roll, buff_value );
-        self_buff->trigger();
+        if ( self_buff->check() && rng().roll( value_spell->effectN( 3 ).percent() ) )
+        {
+          self_buff->expire();
+        }
+        else
+        {
+          auto stat_roll = rng().range( secondary_ratings );
+          self_buff->add_ally_stat( stat_roll, buff_value );
+          self_buff->trigger();
+        }
       }
+    }
+
+    void reset() override
+    {
+      first = true;
+      dbc_proc_callback_t::reset();
     }
   };
 
