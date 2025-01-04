@@ -1805,6 +1805,7 @@ struct fenryr_t final : public dire_critter_t
   {
     owner_coeff.ap_from_ap = 0.4;
     auto_attack_multiplier = 4.85;
+    main_hand_weapon.swing_time = 1.5_s;
   }
 
   void init_spells() override;
@@ -1831,6 +1832,7 @@ struct hati_t final : public dire_critter_t
   {
     owner_coeff.ap_from_ap = 0.4;
     auto_attack_multiplier = 4.85;
+    main_hand_weapon.swing_time = 1.5_s;
   }
 
   void summon( timespan_t duration = 0_ms ) override
