@@ -1742,11 +1742,13 @@ struct dire_critter_t : public hunter_pet_t
         if ( rng().roll( 0.5 ) )
         {
           o()->buffs.summon_fenryr->trigger();
+          o()->pets.fenryr.despawn();
           o()->pets.fenryr.spawn( o()->buffs.summon_fenryr->buff_duration() );
         }
         else
         {
           o()->buffs.summon_hati->trigger();
+          o()->pets.hati.despawn();
           o()->pets.hati.spawn( o()->buffs.summon_hati->buff_duration() );
         }
         o()->buffs.huntmasters_call->expire();
