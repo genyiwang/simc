@@ -340,6 +340,7 @@ public:
     real_ppm_t* t31_sudden_death;
     real_ppm_t* slayers_dominance;
     real_ppm_t* tww2_arms_2pc;
+    real_ppm_t* tww2_fury_2pc;
   } rppm;
 
   // Cooldowns
@@ -372,6 +373,7 @@ public:
     cooldown_t* raging_blow;
     cooldown_t* crushing_blow;
     cooldown_t* ravager;
+    cooldown_t* shield_charge;
     cooldown_t* shield_slam;
     cooldown_t* shield_wall;
     cooldown_t* single_minded_fury_icd;
@@ -437,6 +439,9 @@ public:
     gain_t* lord_of_war;
     gain_t* simmering_rage;
     gain_t* conquerors_banner;
+
+    // TWW2 Tier
+    gain_t* double_down;
   } gain;
 
   // Spells
@@ -943,6 +948,7 @@ public:
   void init_gains() override;
   void init_position() override;
   void init_procs() override;
+  void init_special_effects() override;
   void init_resources( bool ) override;
   void arise() override;
   void combat_begin() override;
@@ -1166,7 +1172,11 @@ public:
       // Action-scoped Enrage effects(#4, #5) only apply with Powerful Enrage
       if ( p()->talents.fury.powerful_enrage->ok() )
         parse_effects( p()->buff.enrage, effect_mask_t( false ).enable( 4, 5 ) );
-      parse_effects( p()->buff.recklessness );
+
+      parse_effects( p()->buff.recklessness, effect_mask_t( true ).disable( 10, 11, 12 ) );
+      if ( p()->is_ptr() && p()->talents.fury.reckless_abandon->ok() )
+        parse_effects( p()->buff.recklessness, effect_mask_t( false ).enable( 10, 11, 12 ) );
+
       parse_effects( p()->buff.slaughtering_strikes );
       parse_effects( p()->talents.fury.wrath_and_fury, effect_mask_t( false ).enable( 2 ), [ this ] { return p()->buff.enrage->check(); } );
 
@@ -1178,6 +1188,9 @@ public:
       if ( p()->is_ptr() )
       {
         parse_effects( p()->talents.warrior.barbaric_training, effect_mask_t( false ).enable( 5, 6 ) );
+        parse_effects( p()->buff.winning_streak_fury );
+        parse_effects( p()->buff.double_down_bt );
+        parse_effects( p()->buff.double_down_rb );
       }
 
       // TWW1 Tier
@@ -1196,6 +1209,12 @@ public:
         parse_effects( p()->talents.warrior.barbaric_training, effect_mask_t( false ).enable( 7, 8 ) );
         if ( p()->talents.warrior.unstoppable_force )
           parse_effects( p()->talents.warrior.avatar, effect_mask_t( false ).enable( 11, 12 ) );
+
+        // TWW2 Tier
+        // effect 3 is handled manually
+        parse_effects( p()->buff.luck_of_the_draw, effect_mask_t( true ).disable( 2, 3 ) );
+        if ( p()->sets->has_set_bonus( WARRIOR_PROTECTION, TWW2, B4 ) )
+          parse_effects( p()->buff.luck_of_the_draw, effect_mask_t( false ).enable( 2 ), p()->sets->set( WARRIOR_PROTECTION, TWW2, B4 ) );
       }
 
       // TWW1 Tier
@@ -1688,6 +1707,18 @@ struct warrior_attack_t : public warrior_action_t<melee_attack_t>
     if ( p()->is_ptr() && p()->sets->has_set_bonus( WARRIOR_ARMS, TWW2, B2 ) && p()->rppm.tww2_arms_2pc->trigger() )
     {
       p()->buff.winning_streak_arms->trigger();
+    }
+    if ( p()->is_ptr() && p()->sets->has_set_bonus( WARRIOR_FURY, TWW2, B2 ) && p()->rppm.tww2_fury_2pc->trigger() )
+    {
+      p()->buff.winning_streak_fury->trigger();
+      if ( p()->sets->has_set_bonus( WARRIOR_FURY, TWW2, B4 ) )
+      {
+        // 50% chance for either isn't in spell data, only spell description
+        if ( p()->rng().roll(0.5) )
+          p()->buff.double_down_bt->trigger();
+        else
+          p()->buff.double_down_rb->trigger();
+      }
     }
   }
 
@@ -2667,6 +2698,9 @@ struct bloodthirst_t : public warrior_attack_t
     {
       p()->buff.thunder_blast->trigger();
     }
+
+    if ( p()->buff.double_down_bt->up() )
+      p()->buff.double_down_bt->decrement();
   }
 
   bool ready() override
@@ -2675,7 +2709,7 @@ struct bloodthirst_t : public warrior_attack_t
     {
       return false;
     }
-    if ( p()->is_ptr() && p()->buff.recklessness->check() && !background )
+    if ( p()->is_ptr() && p()->talents.fury.reckless_abandon->ok() && p()->buff.recklessness->check() && !background )
     {
       return false;
     }
@@ -2978,6 +3012,9 @@ struct bloodbath_t : public warrior_attack_t
     {
       p()->buff.thunder_blast->trigger();
     }
+
+    if ( p()->buff.double_down_bt->up() )
+      p()->buff.double_down_bt->decrement();
   }
 
   bool ready() override
@@ -2986,7 +3023,7 @@ struct bloodbath_t : public warrior_attack_t
     {
       return false;
     }
-    if ( p()->is_ptr() && !p()->buff.recklessness->check() )
+    if ( p()->is_ptr() && !p()->talents.fury.reckless_abandon->ok() && !p()->buff.recklessness->check() )
     {
       return false;
     }
@@ -3408,7 +3445,7 @@ struct bladestorm_t : public warrior_attack_t
         {
           if ( !p()->is_ptr() && bloodbath && p()->buff.bloodbath->check() )
             bloodbath->execute_on_target( t );
-          else if ( p()->is_ptr() && bloodbath && p()->buff.recklessness->check() )
+          else if ( p()->is_ptr() && bloodbath && p()->talents.fury.reckless_abandon->ok() && p()->buff.recklessness->check() )
             bloodbath->execute_on_target( t );
           else
             bloodthirst->execute_on_target( t );
@@ -5338,6 +5375,7 @@ struct raging_blow_t : public warrior_attack_t
   double cd_reset_chance;
   double wrath_and_fury_reset_chance;
   bool opportunist_up;
+  double rage_gain;
   raging_blow_t( warrior_t* p, util::string_view options_str )
     : warrior_attack_t( "raging_blow", p, p->talents.fury.raging_blow ),
       mh_attack( nullptr ),
@@ -5345,7 +5383,8 @@ struct raging_blow_t : public warrior_attack_t
       lightning_strike( nullptr ),
       cd_reset_chance( p->talents.fury.raging_blow->effectN( 1 ).percent() ),
       wrath_and_fury_reset_chance( p->talents.fury.wrath_and_fury->effectN( 1 ).percent() ),
-      opportunist_up( false )
+      opportunist_up( false ),
+      rage_gain( 0 )
   {
     parse_options( options_str );
 
@@ -5366,6 +5405,11 @@ struct raging_blow_t : public warrior_attack_t
       lightning_strike = get_action<lightning_strike_t>( "lightning_strike_raging_blow", p );
       add_child( lightning_strike );
     }
+
+    if ( p->is_ptr() && p->sets->has_set_bonus( WARRIOR_FURY, TWW2, B4 ) )
+    {
+      rage_gain += p->find_spell( 1216569 )->effectN( 2 ).resource( RESOURCE_RAGE );
+    }
   }
 
   void init() override
@@ -5379,6 +5423,11 @@ struct raging_blow_t : public warrior_attack_t
     opportunist_up = p()->buff.opportunist->check();
 
     warrior_attack_t::execute();
+
+    if ( p()->is_ptr() && p()->buff.double_down_rb->up() && rage_gain > 0)
+    {
+      p()->resource_gain( RESOURCE_RAGE, rage_gain, p()->gain.double_down );
+    }
 
     if ( result_is_hit( execute_state->result ) )
     {
@@ -5441,6 +5490,9 @@ struct raging_blow_t : public warrior_attack_t
         lightning_strike->execute();
       }
     }
+
+    if ( p()->buff.double_down_rb->up() )
+      p()->buff.double_down_rb->decrement();
   }
 
   bool ready() override
@@ -5454,7 +5506,7 @@ struct raging_blow_t : public warrior_attack_t
     {
       return false;
     }
-    if ( p()->is_ptr() && p()->buff.recklessness->check() )
+    if ( p()->is_ptr() && p()->talents.fury.reckless_abandon->ok() && p()->buff.recklessness->check() )
     {
       return false;
     }
@@ -5507,6 +5559,7 @@ struct crushing_blow_t : public warrior_attack_t
   action_t* lightning_strike;
   double cd_reset_chance, wrath_and_fury_reset_chance;
   bool opportunist_up;
+  double rage_gain;
   crushing_blow_t( warrior_t* p, util::string_view options_str )
     : warrior_attack_t( "crushing_blow", p, p->spec.crushing_blow ),
       mh_attack( nullptr ),
@@ -5514,7 +5567,8 @@ struct crushing_blow_t : public warrior_attack_t
       lightning_strike( nullptr ),
       cd_reset_chance( p->spec.crushing_blow->effectN( 1 ).percent() ),
       wrath_and_fury_reset_chance( p->talents.fury.wrath_and_fury->effectN( 1 ).percent() ),
-      opportunist_up( false )
+      opportunist_up( false ),
+      rage_gain( 0 )
   {
     parse_options( options_str );
 
@@ -5538,6 +5592,11 @@ struct crushing_blow_t : public warrior_attack_t
       lightning_strike = get_action<lightning_strike_t>( "lightning_strike_crushing_blow", p );
       add_child( lightning_strike );
     }
+
+    if ( p->is_ptr() && p->sets->has_set_bonus( WARRIOR_FURY, TWW2, B4 ) )
+    {
+      rage_gain += p->find_spell( 1216569 )->effectN( 2 ).resource( RESOURCE_RAGE );
+    }
   }
 
   void init() override
@@ -5551,6 +5610,11 @@ struct crushing_blow_t : public warrior_attack_t
     opportunist_up = p()->buff.opportunist->check();
 
     warrior_attack_t::execute();
+
+    if ( p()->is_ptr() && p()->buff.double_down_rb->up() && rage_gain > 0)
+    {
+      p()->resource_gain( RESOURCE_RAGE, rage_gain, p()->gain.double_down );
+    }
 
     if ( result_is_hit( execute_state->result ) )
     {
@@ -5613,6 +5677,9 @@ struct crushing_blow_t : public warrior_attack_t
         lightning_strike->execute();
       }
     }
+
+    if ( p()->buff.double_down_rb->up() )
+      p()->buff.double_down_rb->decrement();
   }
 
   bool ready() override
@@ -5626,7 +5693,7 @@ struct crushing_blow_t : public warrior_attack_t
     {
       return false;
     }
-    if ( p()->is_ptr() && !p()->buff.recklessness->check() )
+    if ( p()->is_ptr() && !p()->talents.fury.reckless_abandon->ok() && !p()->buff.recklessness->check() )
     {
       return false;
     }
@@ -6069,6 +6136,11 @@ struct rampage_attack_t : public warrior_attack_t
       p()->buff.slaughtering_strikes->expire();
       p()->buff.brutal_finish->expire();
       p()->buff.bloody_rampage->expire();
+
+      if ( p()->is_ptr() && p()->buff.winning_streak_fury->up() && p()->rng().roll( p()->sets->set( WARRIOR_FURY, TWW2, B2 )->effectN( 1 ).trigger()->proc_chance() ) )
+      {
+        p()->buff.winning_streak_fury->expire();
+      }
     }
   }
 
@@ -6268,7 +6340,7 @@ struct ravager_t : public warrior_attack_t
         {
           if ( !p()->is_ptr() && bloodbath && p()->buff.bloodbath->check() )
             bloodbath->execute_on_target( t );
-          else if ( p()->is_ptr() && bloodbath && p()->buff.recklessness->check() )
+          else if ( p()->is_ptr() && bloodbath && p()->talents.fury.reckless_abandon->ok() && p()->buff.recklessness->check() )
             bloodbath->execute_on_target( t );
           else
             bloodthirst->execute_on_target( t );
@@ -6783,6 +6855,11 @@ struct shield_slam_t : public warrior_attack_t
     if ( state->result == RESULT_CRIT && p()->sets->has_set_bonus( WARRIOR_PROTECTION, TWW1, B4 ) )
     {
       p()->buff.brutal_followup->trigger();
+    }
+
+    if ( state->result == RESULT_CRIT && p()->sets->has_set_bonus( WARRIOR_PROTECTION, TWW2, B4 ) )
+    {
+      p()->cooldown.shield_charge->adjust( - p()->sets->set( WARRIOR_PROTECTION, TWW2, B4 )->effectN( 2 ).time_value() );
     }
 
     if ( p() -> sets -> has_set_bonus( WARRIOR_PROTECTION, T31, B2 ) && p() -> buff.fervid -> up() )
@@ -8125,6 +8202,45 @@ struct taunt_t : public warrior_spell_t
   }
 };
 
+// ==========================================================================
+// Warrior Proc Callbacks
+// ==========================================================================
+struct warrior_proc_callback_t : public dbc_proc_callback_t
+{
+  warrior_proc_callback_t( const special_effect_t& e ) : dbc_proc_callback_t( e.player, e )
+  {
+    initialize();
+    activate();
+  }
+
+  warrior_t* p() const
+  {
+    return debug_cast<warrior_t*>( listener );
+  }
+  warrior_t* p()
+  {
+    return debug_cast<warrior_t*>( listener );
+  }
+};
+
+void tww2_prot_2pc( const special_effect_t& e )
+{
+  struct tww2_prot_2pc : public warrior_proc_callback_t
+  {
+    tww2_prot_2pc( const special_effect_t& e ) : warrior_proc_callback_t( e )
+    {
+    }
+
+    void execute( action_t*, action_state_t* ) override
+    {
+      p()->buff.shield_wall->trigger( p()->sets->set( WARRIOR_PROTECTION, TWW2, B2 )->effectN( 2 ).time_value() );
+      p()->buff.luck_of_the_draw->trigger();
+    }
+  };
+
+  new tww2_prot_2pc( e );
+}
+
 }  // UNNAMED NAMESPACE
 
 // warrior_t::create_action  ================================================
@@ -8757,6 +8873,7 @@ void warrior_t::init_spells()
   cooldown.raging_blow                      = get_cooldown( "raging_blow" );
   cooldown.crushing_blow                    = get_cooldown( "raging_blow" );
   cooldown.ravager                          = get_cooldown( "ravager" );
+  cooldown.shield_charge                    = get_cooldown( "shield_charge" );
   cooldown.shield_slam                      = get_cooldown( "shield_slam" );
   cooldown.shield_wall                      = get_cooldown( "shield_wall" );
   cooldown.single_minded_fury_icd           = get_cooldown( "single_minded_fury" );
@@ -9536,15 +9653,32 @@ void warrior_t::create_buffs()
                                     buff.hedged_bets -> trigger( timespan_t::from_seconds( sets->set( WARRIOR_ARMS, TWW2, B4 )->effectN( 1 ).base_value() * stacks ) );
                                 });
   buff.hedged_bets = make_buff( this, "hedged_bets", find_spell( 1216556) );                  // Arms 4pc
-  buff.winning_streak_fury = make_buff( this, "winning_streak_fury", find_spell( 1216561 ) ); // Fury 2pc
+  buff.winning_streak_fury = make_buff( this, "winning_streak_fury", find_spell( 1216561 ) )  // Fury 2pc
+                                ->set_chance( 1.0 );
   buff.double_down_bt = make_buff( this, "double_down_bt", find_spell( 1216565 ) );           // Fury 4pc Bloodthirst
   buff.double_down_rb = make_buff( this, "double_down_rb", find_spell( 1216569 ) );           // Fury 4pc Raging Blow
   buff.luck_of_the_draw = make_buff( this, "luck_of_the_draw", find_spell( 1218163 ) );       // Prot 2pc
-  if ( is_ptr() && sets->has_set_bonus( WARRIOR_PROTECTION, TWW2, B4 ) )
+}
+
+// warrior_t::init_special_effects() ====================================
+void warrior_t::init_special_effects()
+{
+  player_t::init_special_effects();
+
+  if ( is_ptr() && sets->has_set_bonus( WARRIOR_PROTECTION, TWW2, B2 ) )
   {
-    buff.luck_of_the_draw->apply_affecting_aura( sets->set( WARRIOR_PROTECTION, TWW2, B4 ) );
+    const spell_data_t* set_data = sets->set( WARRIOR_PROTECTION, TWW2, B2 );
+    auto set_info                = new special_effect_t( this );
+    set_info->name_str           = set_data->name_cstr();
+    set_info->spell_id           = set_data->id();
+    set_info->type               = SPECIAL_EFFECT_EQUIP;
+    set_info->proc_flags2_       = PF2_ALL_HIT;
+    special_effects.push_back( set_info );
+
+    tww2_prot_2pc( *set_info );
   }
 }
+
 
 // warrior_t::init_finished =============================================
 void warrior_t::init_finished()
@@ -9565,7 +9699,10 @@ void warrior_t::init_rng()
   rppm.t31_sudden_death  = get_rppm( "t31_sudden_death", find_spell( 422923 ) );
   rppm.slayers_dominance = get_rppm( "slayers_dominance", talents.slayer.slayers_dominance );
   if( is_ptr() )
+  {
     rppm.tww2_arms_2pc     = get_rppm( "tww2_arms_2pc", find_spell( 1215713 ) );
+    rppm.tww2_fury_2pc     = get_rppm( "tww2_fury_2pc", find_spell( 1215714 ) );
+  }
 }
 
 // warrior_t::validate_fight_style ==========================================
@@ -9650,6 +9787,9 @@ void warrior_t::init_gains()
   gain.merciless_assault      = get_gain( "merciless_assault" );
   gain.thorims_might          = get_gain( "thorims_might" );
   gain.burst_of_power         = get_gain( "burst_of_power" );
+
+  // TWW2 Tier
+  gain.double_down            = get_gain( "double_down" );
 }
 
 // warrior_t::init_position ====================================================
