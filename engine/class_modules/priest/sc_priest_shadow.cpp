@@ -1285,6 +1285,9 @@ struct void_bolt_proc_t final : public void_bolt_base_t
       tww2_pi_proc_duration( p.is_ptr() ? p.sets->set( PRIEST_SHADOW, TWW2, B4 )->effectN( 1 ).time_value() : 0_s ),
       pi_value( player->buffs.power_infusion->default_value )
   {
+    cooldown->duration = 0_s;
+    track_cd_waste     = false;
+
     base_multiplier *= effectiveness;
     // TODO: Check if works on Insanity
     energize_amount *= effectiveness;
