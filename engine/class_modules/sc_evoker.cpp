@@ -5568,8 +5568,8 @@ struct upheaval_t : public empowered_charge_spell_t
       }
       else if ( p->talent.rumbling_earth.enabled() )
       {
-        rumbling_earth = p->get_secondary_action<upheaval_damage_t>( fmt::format( "{}_rumbling_earth", name ),
-                                                                     fmt::format( "{}_rumbling_earth", name ), true, is_tierset );
+        rumbling_earth = p->get_secondary_action<upheaval_damage_t>(
+            fmt::format( "{}_rumbling_earth", name ), fmt::format( "{}_rumbling_earth", name ), true, is_tierset );
       }
 
       if ( p->talent.chronowarden.afterimage.enabled() && !is_rumbling_earth )
@@ -5578,10 +5578,16 @@ struct upheaval_t : public empowered_charge_spell_t
                                                                         fmt::format( "afterimage_{}", name ), true );
       }
 
-      if ( is_tierset && !is_rumbling_earth )
+      if ( is_tierset )
       {
         base_dd_multiplier *= p->sets->set( EVOKER_AUGMENTATION, TWW2, B2 )->effectN( 1 ).percent();
+        sands           = nullptr;
+        threads_of_fate = nullptr;
+        extend_ebon     = 0_s;
+      }
 
+      if ( is_tierset && !is_rumbling_earth )
+      {
         if ( rumbling_earth )
         {
           add_child( rumbling_earth );
@@ -5594,7 +5600,6 @@ struct upheaval_t : public empowered_charge_spell_t
         {
           add_child( reverberations );
         }
-
       }
     }
 
