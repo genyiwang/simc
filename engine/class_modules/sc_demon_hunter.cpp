@@ -7094,7 +7094,7 @@ struct metamorphosis_buff_t : public demon_hunter_buff_t<buff_t>
       p()->buff.enduring_torment->expire();
     }
 
-    if ( p()->set_bonuses.tww2_havoc_4pc->ok() )
+    if ( p()->set_bonuses.tww2_havoc_4pc->ok() && p()->buff.winning_streak->up() )
     {
       p()->buff.necessary_sacrifice->trigger( p()->buff.winning_streak->stack() );
       p()->buff.winning_streak->expire();
