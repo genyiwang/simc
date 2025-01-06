@@ -285,6 +285,7 @@ public:
     buff_t* restless_hunter;
     buff_t* tactical_retreat;
     buff_t* unbound_chaos;
+    buff_t* cycle_of_hatred;
 
     movement_buff_t* fel_rush_move;
     movement_buff_t* vengeful_retreat_move;
@@ -649,7 +650,7 @@ public:
     const spell_data_t* tactical_retreat_buff;
     const spell_data_t* unbound_chaos_buff;
     const spell_data_t* chaotic_disposition_damage;
-    const spell_data_t* essence_break;
+    const spell_data_t* cycle_of_hatred_buff;
 
     // Vengeance
     const spell_data_t* vengeance_demon_hunter;
@@ -2284,7 +2285,7 @@ struct cycle_of_hatred_trigger_t : public BASE
 
   virtual bool has_talents_for_cycle_of_hatred()
   {
-    return BASE::p()->talent.havoc.cycle_of_hatred->ok();
+    return !BASE::p()->is_ptr() && BASE::p()->talent.havoc.cycle_of_hatred->ok();
   }
 
   void execute() override
@@ -2954,11 +2955,22 @@ struct eye_beam_base_t : public demon_hunter_spell_t
       p()->active.collective_anguish->set_target( target );
       p()->active.collective_anguish->execute();
     }
+
+    if ( p()->is_ptr() && p()->talent.havoc.cycle_of_hatred->ok() )
+    {
+      p()->buff.cycle_of_hatred->trigger();
+    }
   }
 
   result_amount_type amount_type( const action_state_t*, bool ) const override
   {
     return result_amount_type::DMG_DIRECT;
+  }
+
+  timespan_t cooldown_duration() const override
+  {
+    return base_t::cooldown_duration() -
+           timespan_t::from_millis( as<int>( p()->buff.cycle_of_hatred->check_stack_value() ) );
   }
 };
 
@@ -7682,6 +7694,9 @@ void demon_hunter_t::create_buffs()
                            ->set_default_value( is_ptr() ? spec.unbound_chaos_buff->effectN( 1 ).percent()
                                                          : talent.havoc.unbound_chaos->effectN( 2 ).percent() );
 
+  buff.cycle_of_hatred = make_buff( this, "cycle_of_hatred", spec.cycle_of_hatred_buff )
+                             ->set_default_value( talent.havoc.cycle_of_hatred->effectN( 1 ).base_value() );
+
   buff.chaos_theory = make_buff( this, "chaos_theory", spec.chaos_theory_buff );
 
   buff.fel_barrage = new buffs::fel_barrage_buff_t( this );
@@ -8594,6 +8609,8 @@ void demon_hunter_t::init_spells()
   spec.unbound_chaos_buff    = talent.havoc.unbound_chaos->ok() ? find_spell( 347462 ) : spell_data_t::not_found();
   spec.chaotic_disposition_damage =
       talent.havoc.chaotic_disposition->ok() ? find_spell( 428493 ) : spell_data_t::not_found();
+  spec.cycle_of_hatred_buff =
+      is_ptr() && talent.havoc.cycle_of_hatred->ok() ? find_spell( 1214887 ) : spell_data_t::not_found();
 
   spec.demon_spikes_buff  = find_spell( 203819 );
   spec.fiery_brand_debuff = talent.vengeance.fiery_brand->ok() ? find_spell( 207771 ) : spell_data_t::not_found();
