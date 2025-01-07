@@ -49,9 +49,6 @@ void affliction( player_t* p )
   action_priority_list_t* ogcd = p->get_action_priority_list( "ogcd" );
   action_priority_list_t* variables = p->get_action_priority_list( "variables" );
 
-  precombat->add_action( "flask" );
-  precombat->add_action( "food" );
-  precombat->add_action( "augmentation" );
   precombat->add_action( "summon_pet" );
   precombat->add_action( "variable,name=cleave_apl,default=0,op=reset" );
   precombat->add_action( "variable,name=trinket_1_buffs,value=trinket.1.has_use_buff", "Used to set Trinket in slot 1 as Buff Trinkets for the automatic logic" );
@@ -219,9 +216,6 @@ void demonology( player_t* p )
   action_priority_list_t* tyrant = p->get_action_priority_list( "tyrant" );
   action_priority_list_t* variables = p->get_action_priority_list( "variables" );
 
-  precombat->add_action( "flask" );
-  precombat->add_action( "food" );
-  precombat->add_action( "augmentation" );
   precombat->add_action( "summon_pet" );
   precombat->add_action( "snapshot_stats" );
   precombat->add_action( "variable,name=first_tyrant_time,op=set,value=12", "Sets the expected Tyrant Setup on pull to take a total 12 seconds long" );
@@ -229,7 +223,7 @@ void demonology( player_t* p )
   precombat->add_action( "variable,name=first_tyrant_time,op=add,value=action.summon_vilefiend.execute_time,if=talent.summon_vilefiend.enabled", "Accounts for the execution time of Vilefiend in the the setup of Tyrant on Pull" );
   precombat->add_action( "variable,name=first_tyrant_time,op=add,value=gcd.max,if=talent.grimoire_felguard.enabled|talent.summon_vilefiend.enabled", "Accounts for the execution time of both Grimoire Felguard and Vilefiend in the tyrant Setup on Pull" );
   precombat->add_action( "variable,name=first_tyrant_time,op=sub,value=action.summon_demonic_tyrant.execute_time+action.shadow_bolt.execute_time", "Accounts for Tyrant own Cast Time and an additional Shadowbolt cast time" );
-  precombat->add_action( "variable,name=first_tyrant_time,op=min,value=10", "Sets an absolute minimun of 10s for the First Tyrant Setup" );
+  precombat->add_action( "variable,name=first_tyrant_time,op=min,value=10", "Sets an absolute minimum of 10s for the First Tyrant Setup" );
   precombat->add_action( "variable,name=in_opener,op=set,value=1" );
   precombat->add_action( "variable,name=trinket_1_buffs,value=trinket.1.has_use_buff", "Defines if the the Trinket 1 is a buff Trinket in the trinket logic" );
   precombat->add_action( "variable,name=trinket_2_buffs,value=trinket.2.has_use_buff", "Defines if the the Trinket 2 is a buff Trinket in the trinket logic" );
@@ -368,9 +362,6 @@ void destruction( player_t* p )
   action_priority_list_t* ogcd = p->get_action_priority_list( "ogcd" );
   action_priority_list_t* variables = p->get_action_priority_list( "variables" );
 
-  precombat->add_action( "flask" );
-  precombat->add_action( "food" );
-  precombat->add_action( "augmentation" );
   precombat->add_action( "summon_pet" );
   precombat->add_action( "variable,name=cleave_apl,default=0,op=reset" );
   precombat->add_action( "variable,name=trinket_1_buffs,value=trinket.1.has_use_buff", "Automatic Logic for Buff Trinkets in Trinket Slot 1" );

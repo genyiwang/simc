@@ -1190,7 +1190,7 @@ struct devouring_plague_t final : public priest_spell_t
 // ==========================================================================
 // Void Bolt
 // ==========================================================================
-struct void_bolt_t final : public priest_spell_t
+struct void_bolt_base_t : public priest_spell_t
 {
   struct void_bolt_extension_t final : public priest_spell_t
   {
@@ -1223,10 +1223,10 @@ struct void_bolt_t final : public priest_spell_t
 
   void_bolt_extension_t* void_bolt_extension;
 
-  void_bolt_t( priest_t& p, util::string_view options_str )
-    : priest_spell_t( "void_bolt", p, p.specs.void_bolt ), void_bolt_extension( nullptr )
+  void_bolt_base_t( priest_t& p, util::string_view name, util::string_view options )
+    : priest_spell_t( name, p, p.specs.void_bolt ), void_bolt_extension( nullptr )
   {
-    parse_options( options_str );
+    parse_options( options );
     use_off_gcd                = true;
     energize_type              = action_energize::ON_CAST;
     cooldown->hasted           = true;
@@ -1268,13 +1268,69 @@ struct void_bolt_t final : public priest_spell_t
   }
 };
 
+
+struct void_bolt_t final : public void_bolt_base_t
+{
+  void_bolt_t( priest_t& p, util::string_view options ) : void_bolt_base_t( p, "void_bolt", options )
+  {
+  }
+};
+
+struct void_bolt_proc_t final : public void_bolt_base_t
+{
+  timespan_t tww2_pi_proc_duration;
+  double pi_value;
+  void_bolt_proc_t( priest_t& p, util::string_view name, double effectiveness = 1.0 )
+    : void_bolt_base_t( p, name, "" ),
+      tww2_pi_proc_duration( p.is_ptr() ? p.sets->set( PRIEST_SHADOW, TWW2, B4 )->effectN( 1 ).time_value() : 0_s ),
+      pi_value( player->buffs.power_infusion->default_value )
+  {
+    cooldown->duration = 0_s;
+    track_cd_waste     = false;
+
+    base_multiplier *= effectiveness;
+    // TODO: Check if works on Insanity
+    energize_amount *= effectiveness;
+    // TODO: Confirm Archon Interaction player->buffs.power_infusion->default_value +
+    // p.talents.archon.concentrated_infusion->effectN( 1 ).percent()
+    //    tww2_voidbolt_modifier( p.is_ptr() ? p.sets->set( PRIEST_SHADOW, TWW2, B2 )->effectN( 1 ).percent() : 0.0 )
+  }
+
+  void execute() override
+  {
+    // TODO: Check ordering
+    if ( p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B4 ) )
+    {
+      if ( player->buffs.power_infusion->check() )
+      {
+        // TODO: check if resets PI or not.
+        if ( player->buffs.power_infusion->current_value != pi_value )
+        {
+          player->buffs.power_infusion->current_value = pi_value;
+          player->buffs.power_infusion->invalidate_cache();
+        }
+        player->buffs.power_infusion->extend_duration( player, tww2_pi_proc_duration );
+      }
+      else
+      {
+        player->buffs.power_infusion->trigger( 1, pi_value, -1, tww2_pi_proc_duration );
+      }
+    }
+
+    void_bolt_base_t::execute();
+  }
+};
+
 // ==========================================================================
 // Dark Ascension
 // ==========================================================================
 struct dark_ascension_t final : public priest_spell_t
 {
+  void_bolt_proc_t* void_bolt_damage_action;
+
   dark_ascension_t( priest_t& p, util::string_view options_str )
-    : priest_spell_t( "dark_ascension", p, p.talents.shadow.dark_ascension )
+    : priest_spell_t( "dark_ascension", p, p.talents.shadow.dark_ascension ),
+      void_bolt_damage_action( nullptr )
   {
     parse_options( options_str );
 
@@ -1283,8 +1339,18 @@ struct dark_ascension_t final : public priest_spell_t
     // Turn off the dummy periodic effect
     base_td_multiplier = 0;
     dot_duration       = timespan_t::from_seconds( 0 );
-  }
 
+    if ( p.is_ptr() && p.sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
+    {
+      void_bolt_damage_action = p.get_secondary_action<void_bolt_proc_t>( "void_bolt_tww2_2pc_dark_ascension",
+                                                                          "void_bolt_tww2_2pc_dark_ascension" );
+      if ( void_bolt_damage_action )
+      {
+        add_child( void_bolt_damage_action );
+      }
+    }
+  }
+  
   void execute() override
   {
     priest_spell_t::execute();
@@ -1302,6 +1368,11 @@ struct dark_ascension_t final : public priest_spell_t
     if ( priest().talents.shadow.ancient_madness.enabled() )
     {
       priest().buffs.ancient_madness->trigger();
+    }
+        
+    if ( p().is_ptr() && p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
+    {
+      void_bolt_damage_action->execute_on_target( target );
     }
   }
 
@@ -1334,8 +1405,11 @@ struct void_eruption_damage_t final : public priest_spell_t
 
 struct void_eruption_t final : public priest_spell_t
 {
+  void_bolt_proc_t* void_bolt_damage_action;
+
   void_eruption_t( priest_t& p, util::string_view options_str )
-    : priest_spell_t( "void_eruption", p, p.talents.shadow.void_eruption )
+    : priest_spell_t( "void_eruption", p, p.talents.shadow.void_eruption ),
+      void_bolt_damage_action( nullptr )
   {
     parse_options( options_str );
 
@@ -1344,6 +1418,16 @@ struct void_eruption_t final : public priest_spell_t
 
     may_miss = false;
     aoe      = -1;
+
+    if ( p.is_ptr() && p.sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
+    {
+      void_bolt_damage_action = p.get_secondary_action<void_bolt_proc_t>( "void_bolt_tww2_2pc_void_eruption",
+                                                                               "void_bolt_tww2_2pc_void_eruption" );
+      if ( void_bolt_damage_action )
+      {
+        add_child( void_bolt_damage_action );
+      }
+    }
   }
 
   void execute() override
@@ -1358,6 +1442,11 @@ struct void_eruption_t final : public priest_spell_t
                                                 timespan_t::from_seconds( priest().buffs.sustained_potency->check() ) );
 
       priest().buffs.sustained_potency->expire();
+    }
+
+    if ( p().is_ptr() && p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
+    {
+      void_bolt_damage_action->execute_on_target( target );
     }
   }
 
@@ -2480,6 +2569,54 @@ void priest_t::init_spells_shadow()
   specs.void_bolt      = find_spell( 205448 );
   specs.voidform       = find_spell( 194249 );
   specs.hallucinations = find_spell( 199579 );
+}
+
+void priest_t::init_special_effects_shadow()
+{
+  if ( is_ptr() && sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
+  {
+    struct shadow_tww2_2pc : public dbc_proc_callback_t
+    {
+      actions::spells::void_bolt_proc_t* void_bolt_damage_action;
+      bool has_tww2_4pc;
+      double power_infusion_value;
+
+      shadow_tww2_2pc( priest_t* p, const special_effect_t& e )
+        : dbc_proc_callback_t( p, e ),
+          void_bolt_damage_action( nullptr ),
+          has_tww2_4pc( p->sets->has_set_bonus( PRIEST_SHADOW, TWW2, B4 ) ),
+          power_infusion_value( listener->buffs.power_infusion->default_value +
+                                p->talents.archon.concentrated_infusion->effectN( 1 ).percent() )
+      {
+        allow_pet_procs = false;
+        initialize();
+        activate();
+
+        void_bolt_damage_action =
+            p->get_secondary_action<actions::spells::void_bolt_proc_t>( "void_bolt_tww2_2pc", "void_bolt_tww2_2pc" );
+      }
+
+      void execute( action_t*, action_state_t* s ) override
+      {
+        if ( s->target->is_sleeping() )
+          return;
+
+        double da = s->result_amount;
+        if ( da > 0 )
+        {
+          void_bolt_damage_action->execute_on_target( s->target );
+        }
+      }
+    };
+
+    auto set_spell       = sets->set( PRIEST_SHADOW, TWW2, B2 );
+    auto set_effect      = new special_effect_t( this );
+    set_effect->name_str = set_spell->name_cstr();
+    set_effect->type     = SPECIAL_EFFECT_EQUIP;
+    set_effect->spell_id = set_spell->id();
+
+    new shadow_tww2_2pc( this, *set_effect );
+  }
 }
 
 action_t* priest_t::create_action_shadow( util::string_view name, util::string_view options_str )

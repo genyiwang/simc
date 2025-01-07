@@ -1301,21 +1301,13 @@ public:
     if ( affected_by.unnatural_causes.direct )
     {
       double amount = p()->talents.unnatural_causes_debuff->effectN( affected_by.unnatural_causes.direct ).percent();
-      //2024-10-30: Bleak Powder is always affected by the base effect from Unnatural Causes twice
-      if ( p()->bugs && ( s->action->id == 467914 || s->action->id == 472084 ) )
-      {
-        amount += p()->talents.unnatural_causes_debuff->effectN( affected_by.unnatural_causes.direct ).percent();
-      } else if ( s->target->health_percentage() < p()->talents.unnatural_causes->effectN( 3 ).base_value() )
+      if ( s->target->health_percentage() < p()->talents.unnatural_causes->effectN( 3 ).base_value() )
       {
         amount *= 1 + p()->talents.unnatural_causes->effectN( 2 ).percent();
       }
 
       am *= 1 + amount;
     }
-
-    //2024-10-30: Bleak Powder gains the damage increase from Specialized Arsenal twice (it is already parsed in hunter_action_t once.)
-    if ( p()->bugs && p()->talents.specialized_arsenal.ok() && ( s->action->id == 467914 || s->action->id == 472084 ) )
-      am *= 1 + p()->talents.specialized_arsenal->effectN( 1 ).percent();
 
     int affected_by_tip = std::max( affected_by.tip_of_the_spear.direct, affected_by.tip_of_the_spear_explosive.direct );
     if ( affected_by_tip && p()->buffs.tip_of_the_spear->check() )
@@ -1750,11 +1742,13 @@ struct dire_critter_t : public hunter_pet_t
         if ( rng().roll( 0.5 ) )
         {
           o()->buffs.summon_fenryr->trigger();
+          o()->pets.fenryr.despawn();
           o()->pets.fenryr.spawn( o()->buffs.summon_fenryr->buff_duration() );
         }
         else
         {
           o()->buffs.summon_hati->trigger();
+          o()->pets.hati.despawn();
           o()->pets.hati.spawn( o()->buffs.summon_hati->buff_duration() );
         }
         o()->buffs.huntmasters_call->expire();
@@ -1811,6 +1805,7 @@ struct fenryr_t final : public dire_critter_t
   {
     owner_coeff.ap_from_ap = 0.4;
     auto_attack_multiplier = 4.85;
+    main_hand_weapon.swing_time = 1.5_s;
   }
 
   void init_spells() override;
@@ -1837,6 +1832,7 @@ struct hati_t final : public dire_critter_t
   {
     owner_coeff.ap_from_ap = 0.4;
     auto_attack_multiplier = 4.85;
+    main_hand_weapon.swing_time = 1.5_s;
   }
 
   void summon( timespan_t duration = 0_ms ) override
