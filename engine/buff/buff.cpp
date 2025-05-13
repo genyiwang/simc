@@ -449,12 +449,23 @@ std::unique_ptr<expr_t> create_buff_expression( util::string_view buff_name, uti
         return buff->max_stack();
       } );
   }
+  else if ( type == "at_max_stacks" )
+  {
+    return make_buff_expr( "buff_at_max_stacks", 
+      []( buff_t* buff ) { 
+        return buff->at_max_stacks(); 
+      } );
+  }
   else if ( type == "value" )
   {
     return make_buff_expr( "buff_value",
       []( buff_t* buff ) {
         return buff->current_value;
       } );
+  }
+  else if ( type == "default_value" )
+  {
+    return make_buff_expr( "buff_default_value", []( buff_t* buff ) { return buff->default_value; } );
   }
   else if ( type == "stack_value" )
   {
@@ -1827,8 +1838,8 @@ timespan_t buff_t::tick_time() const
   switch ( tick_time_behavior )
   {
     case buff_tick_time_behavior::HASTED:
-      assert( player );
-      return buff_period * player->cache.spell_cast_speed();
+      assert( source );
+      return buff_period * source->cache.spell_cast_speed();
     case buff_tick_time_behavior::CUSTOM:
       assert( tick_time_callback );
       return tick_time_callback( this, current_tick );
@@ -3325,6 +3336,10 @@ stat_buff_t* stat_buff_t::add_stat_from_effect( size_t i, double a, const stat_c
 
     if ( stat != STAT_NONE )
       return add_stat( stat, a, c );
+  }
+  else if ( eff.subtype() == A_MOD_INCREASE_HEALTH || eff.subtype() == A_MOD_INCREASE_HEALTH_2 )
+  {
+    return add_stat( STAT_MAX_HEALTH, a, c );
   }
 
   return do_error( "STAT_NONE" );

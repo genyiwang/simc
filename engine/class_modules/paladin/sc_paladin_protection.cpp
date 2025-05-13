@@ -188,7 +188,7 @@ struct avengers_shield_base_t : public paladin_spell_t
     }
   }
 
-double recharge_multiplier( const cooldown_t& cd ) const override
+  double recharge_multiplier( const cooldown_t& cd ) const override
   {
     double rm = paladin_spell_t::recharge_multiplier( cd );
 
@@ -211,6 +211,7 @@ double recharge_multiplier( const cooldown_t& cd ) const override
     }
     return m;
   }
+
   double composite_da_multiplier( const action_state_t* state ) const override
   {
     double m = paladin_spell_t::composite_da_multiplier( state );
@@ -222,6 +223,7 @@ double recharge_multiplier( const cooldown_t& cd ) const override
     }
     return m;
   }
+
   void execute() override
   {
     paladin_spell_t::execute();
@@ -1228,6 +1230,8 @@ void paladin_t::create_buffs_protection()
   buffs.sanctification = make_buff( this, "sanctification_tier", find_spell( 424616 ) );
 
   buffs.sanctification_empower = make_buff( this, "sanctification_tier_empower", find_spell( 424622 ) );
+
+  buffs.luck_of_the_draw = make_buff( this, "luck_of_the_draw", find_spell( 1218114 ) );
 }
 
 void paladin_t::init_spells_protection()

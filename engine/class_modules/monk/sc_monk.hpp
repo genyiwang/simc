@@ -55,8 +55,7 @@ namespace actions
 {
 enum class sef_ability_e
 {
-  SEF_NONE = -1,
-  // Attacks begin here
+  SEF_MIN = -1,
   SEF_TIGER_PALM,
   SEF_BLACKOUT_KICK,
   SEF_BLACKOUT_KICK_TOTM,
@@ -68,19 +67,10 @@ enum class sef_ability_e
   SEF_STRIKE_OF_THE_WINDLORD,
   SEF_STRIKE_OF_THE_WINDLORD_OH,
   SEF_CELESTIAL_CONDUIT,
-  SEF_ATTACK_MAX,
-  // Attacks end here
-
-  // Spells begin here
+  SEF_RJW_TICK,
   SEF_CHI_WAVE,
   SEF_CRACKLING_JADE_LIGHTNING,
-  SEF_SPELL_MAX,
-  // Spells end here
-
-  // Misc
-  SEF_SPELL_MIN  = SEF_CHI_WAVE,
-  SEF_ATTACK_MIN = SEF_TIGER_PALM,
-  SEF_MAX
+  SEF_CRACKLING_JADE_LIGHTNING_AOE
 };
 
 template <class Base>
@@ -144,6 +134,7 @@ public:
   void execute() override;
   void impact( action_state_t *state ) override;
   void tick( dot_t *dot ) override;
+  void assess_damage( result_amount_type typ, action_state_t *s ) override;
   void trigger_storm_earth_and_fire( const action_t *action );
   void trigger_mystic_touch( action_state_t *state );
 };
@@ -213,6 +204,23 @@ struct brews_t
   void insert_cooldown( action_t *action );
   void adjust( timespan_t reduction );
 };
+
+namespace attacks
+{
+struct conduit_of_the_celestials_container_t
+{
+  action_t *base;
+  action_t *celestial;
+
+  conduit_of_the_celestials_container_t() : base( nullptr ), celestial( nullptr )
+  {
+  }
+
+  conduit_of_the_celestials_container_t( monk_t * ) : base( nullptr ), celestial( nullptr )
+  {
+  }
+};
+}  // namespace attacks
 }  // namespace actions
 
 namespace buffs
@@ -335,11 +343,6 @@ public:
 };
 }  // namespace buffs
 
-inline int sef_spell_index( int x )
-{
-  return x - static_cast<int>( actions::sef_ability_e::SEF_SPELL_MIN );
-}
-
 struct monk_td_t : public actor_target_data_t
 {
 public:
@@ -371,6 +374,9 @@ public:
     propagate_const<buff_t *> storm_earth_and_fire;
     propagate_const<buff_t *> touch_of_karma;
 
+    // Mistweaver
+    propagate_const<buff_t *> lesson_of_anger;
+
     // Shado-Pan
     propagate_const<buff_t *> high_impact;
     propagate_const<buff_t *> veterans_eye;
@@ -390,7 +396,7 @@ public:
 // utility to create target_effect_t compatible functions from monk_td_t member references
 // adapted from sc_death_knight.cpp
 template <typename T>
-static std::function<int( actor_target_data_t * )> td_fn( T effect, bool stack = true )
+static std::function<double( actor_target_data_t * )> td_fn( T effect, bool stack = true )
 {
   if constexpr ( std::is_invocable_v<T, monk_td_t::debuff_t> )
   {
@@ -444,13 +450,9 @@ public:
     propagate_const<action_t *> chi_wave;
 
     // Conduit of the Celestials
-    propagate_const<action_t *> courage_of_the_white_tiger;
-    propagate_const<action_t *> flight_of_the_red_crane_damage;
-    propagate_const<action_t *> flight_of_the_red_crane_heal;
-    propagate_const<action_t *> flight_of_the_red_crane_celestial_damage;
-    propagate_const<action_t *> flight_of_the_red_crane_celestial_heal;
-    propagate_const<action_t *> strength_of_the_black_ox_dmg;
-    propagate_const<action_t *> strength_of_the_black_ox_absorb;
+    actions::attacks::conduit_of_the_celestials_container_t courage_of_the_white_tiger;
+    actions::attacks::conduit_of_the_celestials_container_t flight_of_the_red_crane;
+    actions::attacks::conduit_of_the_celestials_container_t strength_of_the_black_ox;
 
     // Shado-Pan
     propagate_const<action_t *> flurry_strikes;
@@ -462,6 +464,9 @@ public:
     propagate_const<action_t *> exploding_keg;
     propagate_const<action_t *> niuzao_call_to_arms_summon;
     propagate_const<action_t *> chi_surge;
+
+    // Mistweaver
+    propagate_const<action_t *> lesson_of_anger_damage;
 
     // Windwalker
     propagate_const<action_t *> empowered_tiger_lightning;
@@ -615,12 +620,17 @@ public:
     // Mistweaver
     propagate_const<absorb_buff_t *> life_cocoon;
     propagate_const<buff_t *> dance_of_chiji_mw;
+    propagate_const<buff_t *> jade_empowerment;
     propagate_const<buff_t *> jadefire_stomp_reset;
     propagate_const<buff_t *> secret_infusion_haste;
     propagate_const<buff_t *> secret_infusion_crit;
     propagate_const<buff_t *> secret_infusion_mastery;
     propagate_const<buff_t *> secret_infusion_versatility;
     propagate_const<buff_t *> sheiluns_gift;
+    propagate_const<buff_t *> lesson_of_anger;
+    propagate_const<buff_t *> lesson_of_despair;
+    propagate_const<buff_t *> lesson_of_doubt;
+    propagate_const<buff_t *> lesson_of_fear;
     propagate_const<buff_t *> teachings_of_the_monastery;
     propagate_const<buff_t *> thunder_focus_tea;
 
@@ -629,10 +639,8 @@ public:
     propagate_const<buff_t *> chi_energy;
     propagate_const<buff_t *> combat_wisdom;
     propagate_const<buff_t *> combo_strikes;
-    propagate_const<buff_t *> cyclone_strikes;
     propagate_const<buff_t *> dance_of_chiji_ww;
     propagate_const<buff_t *> dance_of_chiji_hidden;  // Used for trigger DoCJ ticks
-    propagate_const<buff_t *> darting_hurricane;
     propagate_const<buff_t *> dizzying_kicks;
     propagate_const<buff_t *> dual_threat;
     propagate_const<buff_t *> ferociousness;
@@ -665,8 +673,6 @@ public:
     propagate_const<buff_t *> courage_of_the_white_tiger;
     propagate_const<buff_t *> flight_of_the_red_crane;
     propagate_const<buff_t *> heart_of_the_jade_serpent_stack_mw;
-    propagate_const<buff_t *> heart_of_the_jade_serpent_stack_ww;
-    propagate_const<buff_t *> heart_of_the_jade_serpent;
     propagate_const<buff_t *> heart_of_the_jade_serpent_cdr_celestial;
     propagate_const<buff_t *> heart_of_the_jade_serpent_cdr;
     propagate_const<buff_t *> inner_compass_crane_stance;
@@ -842,13 +848,13 @@ public:
       const spell_data_t *mastery;
       const spell_data_t *aura;
       const spell_data_t *aura_2;
+      const spell_data_t *aura_3;
       const spell_data_t *blackout_kick_rank_2;
       const spell_data_t *blackout_kick_rank_3;
       const spell_data_t *combo_breaker;
       const spell_data_t *combat_conditioning;
       const spell_data_t *empowered_tiger_lightning;
       const spell_data_t *flying_serpent_kick;
-      const spell_data_t *mark_of_the_crane;
       const spell_data_t *touch_of_death_rank_3;
       const spell_data_t *touch_of_karma;
     } windwalker;
@@ -998,6 +1004,7 @@ public:
       player_talent_t dragonfire_brew;
       const spell_data_t *dragonfire_brew_hit;
       player_talent_t charred_passions;
+      const spell_data_t *charred_passions_damage;
       player_talent_t high_tolerance;
       player_talent_t exploding_keg;
       player_talent_t improved_invoke_niuzao_the_black_ox;
@@ -1083,10 +1090,17 @@ public:
       player_talent_t peaceful_mending;
       player_talent_t veil_of_pride;
       player_talent_t shaohaos_lessons;
+      const spell_data_t *lesson_of_doubt_buff;
+      const spell_data_t *lesson_of_despair_buff;
+      const spell_data_t *lesson_of_fear_buff;
+      const spell_data_t *lesson_of_anger_buff;
+      const spell_data_t *lesson_of_anger_damage;
       // Row 10
       player_talent_t awakened_jadefire;
       const spell_data_t *awakened_jadefire_buff;
       player_talent_t dance_of_chiji;
+      player_talent_t jade_empowerment;
+      const spell_data_t *jade_empowerment_buff;
       player_talent_t tea_of_serenity;
       player_talent_t tea_of_plenty;
       player_talent_t unison;
@@ -1171,7 +1185,8 @@ public:
       player_talent_t jadefire_harmony;
       const spell_data_t *jadefire_brand_dmg;
       const spell_data_t *jadefire_brand_heal;
-      player_talent_t darting_hurricane;
+      player_talent_t slicing_winds;
+      const spell_data_t *slicing_winds_damage;
     } windwalker;
 
     // Master of Harmony
@@ -1324,7 +1339,6 @@ public:
     double expel_harm_effectiveness;
     double jadefire_stomp_uptime;
     int chi_burst_healing_targets;
-    int motc_override;
     double squirm_frequency;
 
     int shado_pan_initial_charge_accumulator;
@@ -1334,9 +1348,7 @@ public:
   struct
   {
     const spell_data_t *jadefire_stomp;
-    const spell_data_t *healing_elixir;
     const spell_data_t *invokers_delight;
-    const spell_data_t *rushing_jade_wind;
     const spell_data_t *teachings_of_the_monastery;
   } shared;
 
@@ -1369,7 +1381,6 @@ public:
     const spell_data_t *hidden_masters_forbidden_touch;
     const spell_data_t *hit_combo;
     const spell_data_t *improved_touch_of_death;
-    const spell_data_t *mark_of_the_crane;
     const spell_data_t *summon_white_tiger_statue;
     const spell_data_t *power_strikes_chi;
     const spell_data_t *thunderfist;
@@ -1391,6 +1402,7 @@ public:
   double composite_dodge() const override;
   double non_stacking_movement_modifier() const override;
   double composite_player_target_armor( player_t *target ) const override;
+  double resource_regen_per_second( resource_e ) const override;
   void create_pets() override;
   void init_spells() override;
   void init_background_actions() override;
@@ -1449,13 +1461,7 @@ public:
                              bool ( *trigger )( monk_t *player, action_state_t *state ), proc_flag2 PF2_OVERRIDE,
                              action_t *proc_action_override = nullptr );
   void trigger_celestial_fortune( action_state_t * );
-  void trigger_mark_of_the_crane( action_state_t * );
   void trigger_empowered_tiger_lightning( action_state_t * );
-  player_t *next_mark_of_the_crane_target( action_state_t * );
-  int mark_of_the_crane_counter();
-  bool mark_of_the_crane_max();
-  double sck_modifier();
-  double calculate_last_stagger_tick_damage( int n ) const;
   bool affected_by_sef( spell_data_t data ) const;  // Custom handler for SEF bugs
 
   // Storm Earth and Fire targeting logic
@@ -1468,7 +1474,6 @@ public:
   void storm_earth_and_fire_fixate( player_t *target );
   bool storm_earth_and_fire_fixate_ready( player_t *target );
   player_t *storm_earth_and_fire_fixate_target( pets::sef_pet_e sef_pet );
-  void trigger_storm_earth_and_fire_bok_proc( pets::sef_pet_e sef_pet );
 };
 
 struct sef_despawn_cb_t
@@ -1506,6 +1511,26 @@ struct delayed_execute_event_t : event_t
     if ( target->is_sleeping() )
       return;
     action->execute_on_target( target );
+  }
+};
+
+struct delayed_cb_event_t : event_t
+{
+  std::function<void()> cb;
+
+  delayed_cb_event_t( monk_t *player, timespan_t delay, std::function<void()> cb )
+    : event_t( *player->sim, delay ), cb( std::move( cb ) )
+  {
+  }
+
+  const char *name() const override
+  {
+    return "delayed_cb_event_t";
+  }
+
+  void execute() override
+  {
+    cb();
   }
 };
 }  // namespace events

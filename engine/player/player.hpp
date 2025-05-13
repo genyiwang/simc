@@ -18,6 +18,7 @@
 #include "player_stat_cache.hpp"
 #include "rating.hpp"
 #include "sc_enums.hpp"
+#include "sim/proc.hpp"
 #include "talent.hpp"
 #include "util/cache.hpp"
 #include "util/rng.hpp"
@@ -881,11 +882,11 @@ struct player_t : public actor_t
     double mereldars_toll_ally_trigger_chance             = 0.7;
     double sureki_zealots_insignia_rppm_multiplier        = 0.9;
     player_option_t<std::string> windsingers_passive_stat = "";
-    bool estimate_roaring_warqueens_citrine               = false;
-    bool force_estimate_skippers_group_benefit            = false;
-    bool personal_estimate_skippers_group_benefit         = false;
-    bool estimate_skippers_group_benefit                  = true;
-    double estimate_skippers_group_members                = 4;
+    // Mister Lock-n-Stalk mode of operation
+    player_option_t<std::string> mister_locknstalk_mode = "dynamic";
+    player_option_t<std::string> jastor_diamond_ally_stat = "none";
+    double suspicious_energy_drink_bonus_chance           = 0;
+    timespan_t additional_gcd_time                        = 0_s;
   } thewarwithin_opts;
 
 private:
@@ -1067,7 +1068,7 @@ public:
 
   dot_t*      get_dot     ( util::string_view name, player_t* source );
   gain_t*     get_gain    ( util::string_view name );
-  proc_t*     get_proc    ( util::string_view name );
+  proc_t*     get_proc    ( util::string_view name, unsigned flags = proc_report_e::REPORT_PROC_ALL );
   stats_t*    get_stats   ( util::string_view name, action_t* action = nullptr );
   benefit_t*  get_benefit ( util::string_view name );
   uptime_t*   get_uptime  ( util::string_view name );
@@ -1209,6 +1210,10 @@ public:
   virtual double composite_player_critical_damage_multiplier( const action_state_t* s ) const;
   virtual double composite_player_critical_healing_multiplier() const;
   virtual double composite_player_target_armor( player_t* ) const;
+  virtual double composite_player_healing_received_multiplier() const
+  { return 1.0; }
+  virtual double composite_player_absorb_received_multiplier() const
+  { return 1.0; }
   virtual double composite_mitigation_multiplier( school_e ) const;
   virtual double non_stacking_movement_modifier() const;
   virtual double stacking_movement_modifier() const;

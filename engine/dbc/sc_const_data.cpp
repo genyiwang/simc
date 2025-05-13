@@ -143,6 +143,9 @@ static constexpr std::array<class_passives_entry_t, 51> _class_passives { {
 
 } // ANONYMOUS namespace ====================================================
 
+wowv_t wowv( bool ptr )
+{ return dbc::client_data_version( ptr ); }
+
 const char* dbc::wow_ptr_status( bool ptr )
 #if SC_BETA
 { (void)ptr; return SC_BETA_STR "-BETA"; }
@@ -1180,7 +1183,9 @@ double dbc_t::spell_scaling( player_e t, unsigned level ) const
 {
   uint32_t class_id = util::class_id( t );
 
-  assert( class_id < dbc_t::class_max_size() + 7 && level > 0 && level <= MAX_SCALING_LEVEL );
+  // "9" is the number of scaling class columns in sc_scale_data.inc from SpellScaling.txt
+  // Adjust this if more tables are added to the scale generator in dbc_extract.py
+  assert( class_id < dbc_t::class_max_size() + 9 && level > 0 && level <= MAX_SCALING_LEVEL );
 #if SC_USE_PTR
   return ptr ? _ptr__spell_scaling[ class_id ][ level - 1 ]
              : __spell_scaling[ class_id ][ level - 1 ];

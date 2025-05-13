@@ -1246,18 +1246,56 @@ struct divine_hammer_tick_t : public paladin_melee_attack_t
     direct_tick = true;
     background  = true;
     may_crit    = true;
+    if ( !p->bugs )
+    {
+      affected_by.judgment = false;
+      clears_judgment = false;
+    }
+  }
+
+  void execute() override
+  {
+    paladin_melee_attack_t::execute();
+
+    paladin_t* pal = p();
+    if ( pal->talents.templar.hammerfall->ok() && pal->cooldowns.hammerfall_icd->up() )
+    {
+      int additionalTargets = 0;
+      if ( pal->buffs.templar.shake_the_heavens->up() )
+        additionalTargets += 1; // Disappeared from spell data
+      pal->trigger_empyrean_hammer(
+          nullptr, 1 + additionalTargets,
+          timespan_t::from_millis( pal->talents.templar.hammerfall->effectN( 1 ).base_value() ),
+          true );
+      pal->cooldowns.hammerfall_icd->start();
+    }
+  }
+
+  double composite_target_multiplier( player_t* target ) const override
+  {
+    double ctm = paladin_melee_attack_t::composite_target_multiplier( target );
+
+    paladin_td_t* td = this->td( target );
+    if ( p()->talents.burn_to_ash->ok() && td->dots.truths_wake->is_ticking() )
+    {
+      ctm *= 1.0 + p()->talents.burn_to_ash->effectN( 2 ).percent();
+      if ( p()->bugs )
+        ctm *= 1.0 + p()->talents.burn_to_ash->effectN( 2 ).percent();
+    }
+
+    return ctm;
   }
 };
 
-struct divine_hammer_t : public paladin_spell_t
+struct divine_hammer_t : public holy_power_consumer_t<paladin_spell_t>
 {
-  divine_hammer_t( paladin_t* p ) : paladin_spell_t( "divine_hammer", p, p->talents.divine_hammer )
+  divine_hammer_t( paladin_t* p ) : holy_power_consumer_t<paladin_spell_t>( "divine_hammer", p, p->talents.divine_hammer )
   {
     background = true;
   }
 
   divine_hammer_t( paladin_t* p, util::string_view options_str )
-    : paladin_spell_t( "divine_hammer", p, p->talents.divine_hammer )
+    : holy_power_consumer_t<paladin_spell_t>( "divine_hammer", p, p->talents.divine_hammer )
   {
     parse_options( options_str );
 
@@ -1267,8 +1305,7 @@ struct divine_hammer_t : public paladin_spell_t
 
   void execute() override
   {
-    paladin_spell_t::execute();
-
+    holy_power_consumer_t<paladin_spell_t>::execute();
     p()->buffs.divine_hammer->trigger();
   }
 };
@@ -1628,48 +1665,15 @@ void paladin_t::create_buffs_retribution()
                           ->set_trigger_spell( talents.empyrean_power );
   buffs.judge_jury_and_executioner = make_buff( this, "judge_jury_and_executioner", find_spell( 453433 ) );
   buffs.divine_hammer = make_buff( this, "divine_hammer", talents.divine_hammer )
+    ->set_tick_on_application( true )
+    ->set_partial_tick( true )
     ->set_max_stack( 1 )
     ->set_default_value( 1.0 )
-    ->set_period( timespan_t::from_millis( 2200 ) )
+    ->set_period( timespan_t::from_millis( 2000 ) )
     ->set_freeze_stacks( true )
-    ->set_tick_time_callback([](const buff_t* b, unsigned) -> timespan_t {
-      auto res = timespan_t::from_millis( 2200 );
-      res *= 1.0 / b->current_value;
-      return res;
-    })
-    ->set_tick_callback([this](buff_t* b, int, const timespan_t&) {
-      // consume a holy power, if one isn't available then buff ends
-      if ( !resource_available( RESOURCE_HOLY_POWER, 1.0 ) ) {
-        b->expire();
-      } else {
-        active.divine_hammer_tick->schedule_execute();
-      }
-    })
-    ->set_stack_change_callback( [ this ]( buff_t* b, int, int new_ ) {
-      for ( size_t i = 2; i < 5; i++ )
-      {
-        double recharge_mult = 1.0 / ( 1.0 + b->data().effectN( i ).percent() );
-        spelleffect_data_t label = b->data().effectN( i );
-        for ( auto a : action_list )
-        {
-          if ( a->cooldown->duration != 0_ms &&
-               ( a->data().affected_by( label ) || a->data().affected_by_category( label ) ) )
-          {
-            if ( new_ == 1 )
-              a->dynamic_recharge_rate_multiplier *= recharge_mult;
-            else
-              a->dynamic_recharge_rate_multiplier /= recharge_mult;
-
-            if ( a->cooldown->action == a )
-              a->cooldown->adjust_recharge_multiplier();
-
-            if ( a->internal_cooldown->action == a )
-              a->internal_cooldown->adjust_recharge_multiplier();
-          }
-        }
-      }
-    }
-  );
+    ->set_tick_callback([this](buff_t*, int, const timespan_t&) {
+      active.divine_hammer_tick->schedule_execute();
+    });
 
   // legendaries
   buffs.empyrean_legacy = make_buff( this, "empyrean_legacy", find_spell( 387178 ) );
@@ -1678,12 +1682,14 @@ void paladin_t::create_buffs_retribution()
   buffs.echoes_of_wrath = make_buff( this, "echoes_of_wrath", find_spell( 423590 ) );
 
   buffs.rise_from_ash = make_buff( this, "rise_from_ash", find_spell( 454693 ) );
+  buffs.winning_streak = make_buff( this, "winning_streak", find_spell( 1216828 ) )
+    ->set_default_value_from_effect( 1 );
+  buffs.all_in = make_buff( this, "all_in", find_spell( 1216837 ) )
+    ->set_default_value_from_effect( 1 );
 }
 
 void paladin_t::init_rng_retribution()
 {
-  // TODO(mserrano): is this right? It looks right-ish from logs, but it's hard to say
-  rppm.radiant_glory = get_rppm( "radiant_glory", 1.0 );
   rppm.judge_jury_and_executioner = get_rppm( "judge_jury_and_executioner", talents.judge_jury_and_executioner );
 }
 
@@ -1783,6 +1789,9 @@ void paladin_t::init_spells_retribution()
 
   spells.crusade = find_spell( 231895 );
   spells.highlords_judgment_hidden = find_spell( 449198 );
+
+  spells.winning_streak = find_spell( 1216828 );
+  spells.all_in = find_spell( 1216837 );
 }
 
 // Action Priority List Generation

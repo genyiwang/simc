@@ -1524,8 +1524,29 @@ class SpellDataGenerator(DataGenerator):
          449441, # Fury of the Stormrook Set
          469917, 469920, # golem gearbox
          # 11.1
-         1217431, 1217432, 1217427, 1217638, 1217665, 1217675, 1217676, 1217723, # Zee's Thug Hotline
+         1217431, 1217432, 1217427, 1217638, 1217665, 1217675, 1217676, 1217723, 1217719, # Zee's Thug Hotline
          1214823, 1214826, # The Jastor Diamond
+         1219662, # Junkmaestro's Mega Magnet
+         1220419, 1220415, # Gigazap's Zap-Cap
+         1218471, 1218442, 1218463, 1218469, # Machine Gob's Iron Grin
+         1214787, 1214806, 1214807, 1214808, 1214810, # Mechano-core Amplifier
+         1219299, 1219301, # Garbagemancer's Last Resort
+         1213433, 1213434, # Funhouse Lens
+         1218715, # Maybe Stop Blowing Up (Improvised Seaforium Pacemaker)
+         1219662, # Junkmaestro's Mega Magnet
+         # 11.1.5
+         1225040, # Twilight Devastation Enchant
+         1227303, # Twisted Appendage Enchant
+         # 11.1.7
+         1236109, 1236110, 1236140, # Charged Bolts
+         1236118, 1236122, 1236141, # Cauterizing Bolts
+         1236142, 1236272, # Critical Chain
+         1236144, 1236273, 1236936, # Spark Burst
+         1236146, 1236275, 1236938, # Static Charge
+         1236148, 1236276, 1236937, 1236961, # Electric Current
+         1236161, 1236277, # Charged Touch
+         1236165, 1236278, 1236993, # Energy Shield
+         1236169, 1236279, # Charged Crystal
         ),
 
         # Warrior:
@@ -1669,13 +1690,16 @@ class SpellDataGenerator(DataGenerator):
           ( 164273, 2 ), # Lone Wolf buff
           ( 361736, 5 ), # Coordinated Assault (pet buff)
           ( 219199, 1 ), # Dire Beast (summon)
-          ( 426703, 5), # Dire Beast Kill Command
-          ( 459834, 3), # Sulfur-Lined Pockets (Explosive Shot buff)
+          ( 426703, 5 ), # Dire Beast Kill Command
+          ( 459834, 3 ), # Sulfur-Lined Pockets (Explosive Shot buff)
           # Hero Talents
-          ( 444354, 0), # Shadow Lash
-          ( 444269, 0), # Shadow Surge
-          ( 442419, 0), # Shadow Hounds
-          ( 468037, 0), # Withering Fire secondary Black Arrows
+          ( 444354, 0 ), # Shadow Lash
+          ( 444269, 0 ), # Shadow Surge
+          ( 442419, 0 ), # Shadow Hounds
+          ( 468037, 0 ), # Withering Fire secondary Black Arrows
+          ( 474293, 2 ), # Moving Target buff
+          ( 471947, 0 ), ( 472020, 0 ), # Boar Charge (Pack Leader)
+          ( 1225858, 0 ), # Bear Summon (Pack Leader)
         ),
 
         # Rogue:
@@ -1769,6 +1793,7 @@ class SpellDataGenerator(DataGenerator):
             ( 457236, 0 ),          # Singular Focus damage spell
             ( 459002, 0 ),          # Outlaw 11.0 Set Bonus damage spell
             ( 467059, 0 ),          # Outlaw Crackshot Dispatch clone damage spell
+            ( 1219264, 0 ),         # Assassination TWW2 4pc set bonus buff spell
         ),
 
         # Priest:
@@ -1814,6 +1839,7 @@ class SpellDataGenerator(DataGenerator):
             ( 196810, 5 ),          # Searing Light (Divine Image legendary pet spell)
             ( 196811, 5 ),          # Searing Light (Divine Image talent pet spell)
             ( 196812, 5 ),          # Light Eruption (Divine Image legendary pet spell)
+            ( 464047, 5 ),          # Light Eruption (Divine Image legendary pet spell)
             ( 196813, 5 ),          # Blessed Light (Divine Image legendary pet spell)
             ( 196816, 5 ),          # Tranquil Light (Divine Image legendary pet spell)
             ( 325315, 0 ),          # Ascended Blast heal
@@ -2081,6 +2107,9 @@ class SpellDataGenerator(DataGenerator):
           ( 453326, 0 ),                            # Arcane Surge (Arcane Phoenix)
           ( 450421, 0 ),                            # Greater Pyroblast (Arcane Phoenix)
           ( 455137, 0 ),                            # Blessing of the Phoenix missile speed
+          ( 1216988, 0 ),                           # Recently damaged by Blizzard (Freezing Winds talent)
+          ( 1223801, 0 ),                           # Arcane Rebound
+          ( 1217750, 0 ),                           # Master of Flame hidden buff
         ),
 
         # Warlock:
@@ -4681,6 +4710,11 @@ class ClientDataVersionGenerator(DataGenerator):
             self.format_str('SIMC_WOW_VERSION').upper(),
             '{}{}{}'.format(self._options.build.expansion(), self._options.build.patch(),
                 self._options.build.minor())))
+
+        self._out.write('static const wowv_t __{} {{ {}, {}, {}, {} }};\n'.format(
+            self.format_str('client_data_version'),
+            self._options.build.expansion(), self._options.build.patch(),
+            self._options.build.minor(), self._options.build.build()))
 
         if self._options.hotfix_file:
             self._out.write('\n// Hotfix data versioning information\n\n')

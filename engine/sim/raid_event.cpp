@@ -386,7 +386,7 @@ struct pull_event_t final : raid_event_t
 
     timespan_t time_to_percent( double percent ) const override
     {
-      double target_hp = resources.initial[ RESOURCE_HEALTH ] * percent;
+      double target_hp = resources.initial[ RESOURCE_HEALTH ] * (percent / 100);
       if ( target_hp >= resources.current[ RESOURCE_HEALTH ])
         return timespan_t::zero();
 
@@ -632,9 +632,11 @@ struct pull_event_t final : raid_event_t
     {
       if ( !sim->single_actor_batch )
       {
-        for ( auto* p : sim->player_non_sleeping_list )
+        // use indices since it's possible to spawn new actors when bloodlust is triggered
+        for ( size_t i = 0; i < sim->player_non_sleeping_list.size(); i++ )
         {
-           if ( p->is_pet() )
+          auto* p = sim->player_non_sleeping_list[ i ];
+          if ( p->is_pet() )
             continue;
 
           p->buffs.bloodlust->trigger();
@@ -1260,6 +1262,7 @@ struct damage_event_t final : public raid_event_t
           school      = s;
           may_crit    = false;
           background  = true;
+          not_a_proc  = true;
           trigger_gcd = 0_ms;
         }
       };
@@ -1442,11 +1445,16 @@ struct buff_raid_event_t final : public raid_event_t
   std::unordered_map<size_t, buff_t*> buff_list;
   std::string buff_str;
   unsigned stacks;
+  bool always_trigger;
 
-  buff_raid_event_t( sim_t* s, std::string_view options_str ) : raid_event_t( s, "buff" ), stacks( 1 )
+  buff_raid_event_t( sim_t* s, std::string_view options_str ) :
+    raid_event_t( s, "buff" ),
+    stacks( -1 ),
+    always_trigger( false )
   {
     add_option( opt_string( "buff_name", buff_str ) );
     add_option( opt_uint( "stacks", stacks ) );
+    add_option( opt_bool( "always_trigger", always_trigger ) );
     parse_options( options_str );
 
     players_only = true;
@@ -1465,7 +1473,10 @@ struct buff_raid_event_t final : public raid_event_t
 
       if ( b )
       {
-        b->trigger( stacks, duration.mean > 0_ms ? duration.mean : timespan_t::min() );
+        if ( always_trigger )
+          b->execute( stacks, buff_t::DEFAULT_VALUE(), duration.mean > 0_ms ? duration.mean : timespan_t::min() );
+        else
+          b->trigger( stacks, duration.mean > 0_ms ? duration.mean : timespan_t::min() );
       }
       else
       {
@@ -2465,8 +2476,12 @@ double raid_event_t::evaluate_raid_event_expression( sim_t* s, util::string_view
 
   if ( filter == "has_boss" )
   {
-    if ( auto pull_event = dynamic_cast<pull_event_t*>( e ) )
-      return pull_event->has_boss;
+    if ( e->type == "pull" )
+      if ( auto pull_event = dynamic_cast<pull_event_t*>( e ) )
+        return pull_event->has_boss;
+
+    if ( e->type == "adds" )
+      return false;
 
     throw std::invalid_argument(
         fmt::format( "Invalid filter expression '{}' for non-pull raid event '{}'.", filter, type_or_name ) );

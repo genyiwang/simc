@@ -64,6 +64,14 @@ void warlock_pet_t::create_buffs()
 
   buffs.empowered_legion_strike = make_buff( this, "empowered_legion_strike", o()->tier.empowered_legion_strike );
 
+  buffs.demonic_hunger = make_buff( this, "demonic_hunger", o()->tier.demonic_hunger )
+                             ->set_default_value( o()->tier.demonic_hunger->effectN( 1 ).percent() )
+                             ->set_rppm( RPPM_DISABLE )
+                             ->set_chance( 1.0 );
+
+  buffs.spliced_4pc = make_buff( this, "spliced_fiendtraders_influence_4pc" )
+                          ->set_chance( 1.0 );
+
   // Destruction
   buffs.embers = make_buff( this, "embers", o()->talents.embers )
                      ->set_tick_callback( [ this ]( buff_t*, int, timespan_t ) {
@@ -93,6 +101,8 @@ void warlock_pet_t::create_buffs()
   buffs.embers->quiet = true;
   buffs.demonic_power->quiet = true;
   buffs.the_expendables->quiet = true;
+  buffs.demonic_hunger->quiet = true;
+  buffs.spliced_4pc->quiet = true;
 }
 
 void warlock_pet_t::init_base_stats()
@@ -153,7 +163,7 @@ double warlock_pet_t::composite_player_multiplier( school_e school ) const
 
   m *= 1.0 + buffs.grimoire_of_service->check_value();
 
-  if ( pet_type == PET_DREADSTALKER && o()->talents.dread_calling.ok() )
+  if ( ( pet_type == PET_DREADSTALKER || pet_type == PET_FELHUNTER ) && o()->talents.dread_calling.ok() )
     m *= 1.0 + buffs.dread_calling->check_value();
 
   if ( o()->talents.the_expendables.ok() )
@@ -171,7 +181,8 @@ double warlock_pet_t::composite_player_critical_damage_multiplier( const action_
 {
   double m = pet_t::composite_player_critical_damage_multiplier( s );
 
-  m += o()->talents.demonic_brutality->effectN( 1 ).percent() / 2.0;
+  // Handled in pet_t::composite_player_critical_damage_multiplier now, as pets inherit these modifiers from the owner. 
+  // m += o()->talents.demonic_brutality->effectN( 1 ).percent();
 
   return m;
 }
@@ -183,7 +194,7 @@ double warlock_pet_t::composite_spell_haste() const
   if ( is_main_pet &&  o()->talents.demonic_inspiration.ok() )
     m *= 1.0 + o()->talents.demonic_inspiration->effectN( 1 ).percent();
 
-  if ( pet_type == PET_DREADSTALKER && o()->talents.flametouched.ok() )
+  if ( ( pet_type == PET_DREADSTALKER || pet_type == PET_FELHUNTER ) && o()->talents.flametouched.ok() )
     m *= 1.0 + o()->talents.flametouched->effectN( 1 ).percent();
 
   return m;
@@ -196,7 +207,7 @@ double warlock_pet_t::composite_spell_cast_speed() const
   if ( is_main_pet &&  o()->talents.demonic_inspiration.ok() )
       m /= 1.0 + o()->talents.demonic_inspiration->effectN( 1 ).percent();
 
-  if ( pet_type == PET_DREADSTALKER && o()->talents.flametouched.ok() )
+  if ( ( pet_type == PET_DREADSTALKER || pet_type == PET_FELHUNTER ) && o()->talents.flametouched.ok() )
     m /= 1.0 + o()->talents.flametouched->effectN( 1 ).percent();
 
   return m;
@@ -209,7 +220,7 @@ double warlock_pet_t::composite_melee_auto_attack_speed() const
   if ( is_main_pet && o()->talents.demonic_inspiration.ok() )
     m /= 1.0 + o()->talents.demonic_inspiration->effectN( 1 ).percent();
 
-  if ( pet_type == PET_DREADSTALKER && o()->talents.flametouched.ok() )
+  if ( ( pet_type == PET_DREADSTALKER || pet_type == PET_FELHUNTER ) && o()->talents.flametouched.ok() )
     m /= 1.0 + o()->talents.flametouched->effectN( 1 ).percent();
 
   return m;
@@ -461,13 +472,13 @@ felguard_pet_t::felguard_pet_t( warlock_t* owner, util::string_view name )
 {
   action_list_str = "travel";
 
-  if ( owner->talents.soul_strike.ok() )
-    action_list_str += "/soul_strike";
-
   action_list_str += "/felstorm_demonic_strength";
   if ( !owner->disable_auto_felstorm )
     action_list_str += "/felstorm";
   action_list_str += "/legion_strike,if=energy>=" + util::to_string( max_energy_threshold );
+
+  if ( owner->talents.soul_strike.ok() )
+    action_list_str += "/soul_strike";
 
   felstorm_cd = get_cooldown( "felstorm" );
   dstr_cd = get_cooldown( "felstorm_demonic_strength" );
@@ -483,17 +494,9 @@ struct felguard_melee_t : public warlock_pet_melee_t
   {
     fiendish_wrath_t( warlock_pet_t* p ) : warlock_pet_melee_attack_t( "Fiendish Wrath", p, p->o()->talents.fiendish_wrath_dmg )
     {
+      weapon_multiplier = 1.0;
       background = dual = true;
       aoe = -1;
-    }
-
-    void init_finished() override
-    {
-      warlock_pet_melee_attack_t::init_finished();
-
-      snapshot_flags &= ~STATE_MUL_PET;
-      snapshot_flags &= ~STATE_TGT_MUL_PET;
-      snapshot_flags &= ~STATE_VERSATILITY;
     }
 
     size_t available_targets( std::vector<player_t*>& tl ) const override
@@ -522,12 +525,10 @@ struct felguard_melee_t : public warlock_pet_melee_t
 
   void impact( action_state_t* s ) override
   {
-    auto amount = s->result_raw;
-
     warlock_pet_melee_t::impact( s );
 
     if ( p()->buffs.fiendish_wrath->check() )
-      fiendish_wrath->execute_on_target( s->target, amount );
+      fiendish_wrath->execute_on_target( s->target );
   }
 };
 
@@ -711,7 +712,7 @@ struct soul_strike_t : public warlock_pet_melee_attack_t
     {
       background = dual = true;
       aoe = -1;
-      ignores_armor = true;
+      ignores_armor = !p->bugs; // TOCHECK: 2025-04-17 This spell currently does not ignore armor (bug?)
       base_dd_min = base_dd_max = 0;
     }
 
@@ -719,7 +720,10 @@ struct soul_strike_t : public warlock_pet_melee_attack_t
     {
       warlock_pet_melee_attack_t::init_finished();
 
-      snapshot_flags &= STATE_NO_MULTIPLIER;
+      // TOCHECK: 2025-04-17 Although this spell is not supposed to be affected by modifiers, it is currently affected by them (bug?)
+      if ( !p()->bugs )
+        snapshot_flags &= STATE_NO_MULTIPLIER;
+
     }
 
     size_t available_targets( std::vector<player_t*>& tl ) const override
@@ -884,6 +888,7 @@ void felguard_pet_t::init_base_stats()
   owner_coeff.sp_from_sp = 1.4519;
 
   melee_attack->base_dd_multiplier *= 1.42;
+  debug_cast<felguard_melee_t*>( melee_attack )->fiendish_wrath->base_dd_multiplier = melee_attack->base_dd_multiplier;
 
   special_action = new axe_toss_t( this, "" );
 
@@ -1273,6 +1278,18 @@ dreadstalker_t::dreadstalker_t( warlock_t* owner ) : warlock_pet_t( owner, "drea
   server_action_delay = 0_ms; // Will be set when spawning Dreadstalkers to ensure pets are synced on delay
 }
 
+dreadstalker_t::dreadstalker_t( warlock_t* owner, util::string_view pet_name, pet_e pet_type )
+  : warlock_pet_t( owner, pet_name, pet_type, true )
+{
+  action_list_str = "leap/dreadbite";
+  resource_regeneration  = regen_type::DISABLED;
+
+  // 2024-11-16: Coefficient updated
+  owner_coeff.ap_from_sp = 0.825;
+
+  owner_coeff.health = 0.4;
+}
+
 struct dreadbite_t : public warlock_pet_melee_attack_t
 {
   dreadbite_t( warlock_pet_t* p ) : warlock_pet_melee_attack_t( "Dreadbite", p, p->find_spell( 205196 ) )
@@ -1301,6 +1318,7 @@ struct dreadbite_t : public warlock_pet_melee_attack_t
   {
     warlock_pet_melee_attack_t::execute();
 
+    p()->buffs.spliced_4pc->expire();
     debug_cast< dreadstalker_t* >( p() )->dreadbite_executes--;
   }
 
@@ -1310,6 +1328,16 @@ struct dreadbite_t : public warlock_pet_melee_attack_t
 
     if ( p()->o()->talents.wicked_maw.ok() )
       owner_td( s->target )->debuffs_wicked_maw->trigger();
+  }
+
+  double composite_da_multiplier( const action_state_t* s ) const override
+  {
+    double m = warlock_pet_melee_attack_t::composite_da_multiplier( s );
+
+    if ( p()->buffs.spliced_4pc->check() )
+      m *= p()->buffs.spliced_4pc->check_value();
+
+    return m;
   }
 };
 
@@ -1336,6 +1364,20 @@ struct dreadstalker_melee_t : warlock_pet_melee_t
     }
   }
 };
+
+void dreadstalker_t::queue_dreadbite()
+{
+  dreadbite_executes++;
+
+  if ( !readying && !channeling && !executing )
+    schedule_ready();
+
+  if ( readying )
+  {
+    event_t::cancel( readying );
+    schedule_ready();
+  }
+}
 
 struct dreadstalker_leap_t : warlock_pet_t::travel_t
 {
@@ -1712,6 +1754,56 @@ void doomguard_t::arise()
 }
 
 /// Doomguard End
+
+/// Greater Dreadstalker Begin
+
+greater_dreadstalker_t::greater_dreadstalker_t( warlock_t* owner )
+  : dreadstalker_t( owner, "greater_dreadstalker", PET_FELHUNTER )
+{
+  action_list_str = "dreadbite";
+
+  owner_coeff.ap_from_sp = 0.825;
+  owner_coeff.health = 0.4;
+}
+
+void greater_dreadstalker_t::arise()
+{
+  warlock_pet_t::arise();
+
+  vilefiend_present_on_summon = o()->buffs.vilefiend->check();
+
+  dreadbite_executes = 1;
+
+  buffs.demonic_hunger->trigger();
+}
+
+void greater_dreadstalker_t::demise()
+{
+  if ( !current.sleeping && o()->talents.demoniac.ok() )
+  {
+    bool success = o()->buffs.demonic_core->trigger( 1, buff_t::DEFAULT_VALUE(), o()->talents.demonic_core_spell->effectN( 2 ).percent() );
+    if ( success )
+      o()->procs.demonic_core_big_dogs->occur();
+  }
+
+  warlock_pet_t::demise();
+}
+
+double greater_dreadstalker_t::composite_player_multiplier( school_e school ) const
+{
+  double m = warlock_pet_t::composite_player_multiplier( school );
+
+  // 2025-03-28: Houndmasters Gambit talent is only applied to Greater Dreadstalkers if Vilefiend is present on summon
+  // Unlike normal Dreadstalkers, summoning Vilefiend when Greater Dreadstalkers are present does not apply the Houndmasters Gambit talent (maybe a bug?)
+  if ( ( vilefiend_present_on_summon || !bugs ) && o()->talents.the_houndmasters_gambit.ok() && o()->buffs.vilefiend->check() )
+    m *= 1.0 + o()->talents.houndmasters_aura->effectN( 1 ).percent();
+
+  m *= buffs.demonic_hunger->check_value();
+
+  return m;
+}
+
+/// Greater Dreadstalker End
 
 }  // namespace demonology
 
@@ -2167,7 +2259,7 @@ struct eye_beam_t : public warlock_pet_spell_t
   {
     double m = warlock_pet_spell_t::composite_target_multiplier( target );
 
-    double dots = p()->o()->get_target_data( target )->count_affliction_dots();
+    double dots = p()->o()->get_target_data( target )->count_affliction_dots( !p()->o()->bugs );
 
     double dot_multiplier = p()->o()->talents.summon_darkglare->effectN( 3 ).percent();
 

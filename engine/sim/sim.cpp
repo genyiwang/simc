@@ -1184,8 +1184,10 @@ struct bloodlust_check_t : public event_t
     {
       if ( !sim.single_actor_batch )
       {
-        for ( auto* p : sim.player_non_sleeping_list )
+        // use indices since it's possible to spawn new actors when bloodlust is triggered
+        for ( size_t i = 0; i < sim.player_non_sleeping_list.size(); i++ )
         {
+          auto* p = sim.player_non_sleeping_list[ i ];
           if ( p->is_pet() || p->buffs.exhaustion->check() )
             continue;
 
@@ -1471,8 +1473,6 @@ sim_t::sim_t()
     dbc_override( std::make_unique<dbc_override_t>() ),
     timewalk( -1 ),
     scale_to_itemlevel( -1 ),
-    keystone_level( 10 ),
-    keystone_pct_hp( 27 ),
     dungeon_route_smart_targeting( true ),
     challenge_mode( false ),
     scale_itemlevel_down_only( false ),
@@ -1482,7 +1482,7 @@ sim_t::sim_t()
     pvp_rules(),
     pvp_mode( false ),
     auto_attacks_always_land( false ),
-    log_spell_id(),
+    log_spell_id( true ),
     active_enemies( 0 ),
     active_allies( 0 ),
     _rng(),
@@ -3786,8 +3786,8 @@ void sim_t::create_options()
   add_option( opt_int( "desired_tank_targets", desired_tank_targets ) );
   add_option( opt_bool( "enable_taunts", enable_taunts ) );
   add_option( opt_bool( "use_item_verification", use_item_verification ) );
-  add_option( opt_int( "keystone_level", keystone_level, 1, 50 ) );
-  add_option( opt_int( "keystone_pct_hp", keystone_pct_hp, 1, 100 ) );
+  add_option( opt_obsoleted( "keystone_level" ) );
+  add_option( opt_obsoleted( "keystone_pct_hp" ) );
   add_option( opt_bool( "dungeon_route_smart_targeting", dungeon_route_smart_targeting ) );
 
   // Character Creation

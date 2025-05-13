@@ -71,7 +71,6 @@ struct mind_flay_base_t : public priest_spell_t
   }
 };
 
-
 struct mind_flay_insanity_t final : public mind_flay_base_t
 {
   mind_flay_insanity_t( priest_t& p, util::string_view options_str )
@@ -1222,12 +1221,21 @@ struct void_bolt_base_t : public priest_spell_t
   };
 
   void_bolt_extension_t* void_bolt_extension;
+  bool trigger_shadowy_apparitions;
+  const spell_data_t* mind_flay_spell;
+  const spell_data_t* mind_flay_insanity_spell;
+  const spell_data_t* void_torrent_spell;
 
   void_bolt_base_t( priest_t& p, util::string_view name, util::string_view options )
-    : priest_spell_t( name, p, p.specs.void_bolt ), void_bolt_extension( nullptr )
+    : priest_spell_t( name, p, p.specs.void_bolt ),
+      void_bolt_extension( nullptr ),
+      trigger_shadowy_apparitions( true ),
+      mind_flay_spell( p.specs.mind_flay ),
+      mind_flay_insanity_spell( p.talents.shadow.mind_flay_insanity_spell ),
+      void_torrent_spell( p.talents.shadow.void_torrent )
   {
     parse_options( options );
-    use_off_gcd                = true;
+
     energize_type              = action_energize::ON_CAST;
     cooldown->hasted           = true;
     affected_by_shadow_weaving = true;
@@ -1253,7 +1261,8 @@ struct void_bolt_base_t : public priest_spell_t
   {
     priest_spell_t::impact( s );
 
-    priest().trigger_shadowy_apparitions( priest().procs.shadowy_apparition_vb, s->result == RESULT_CRIT );
+    if ( trigger_shadowy_apparitions )
+      priest().trigger_shadowy_apparitions( priest().procs.shadowy_apparition_vb, s->result == RESULT_CRIT );
 
     if ( void_bolt_extension )
     {
@@ -1268,7 +1277,6 @@ struct void_bolt_base_t : public priest_spell_t
   }
 };
 
-
 struct void_bolt_t final : public void_bolt_base_t
 {
   void_bolt_t( priest_t& p, util::string_view options ) : void_bolt_base_t( p, "void_bolt", options )
@@ -1280,36 +1288,35 @@ struct void_bolt_proc_t final : public void_bolt_base_t
 {
   timespan_t tww2_pi_proc_duration;
   double pi_value;
-  void_bolt_proc_t( priest_t& p, util::string_view name, double effectiveness = 1.0 )
+  void_bolt_proc_t( priest_t& p, util::string_view name, double effectiveness )
     : void_bolt_base_t( p, name, "" ),
-      tww2_pi_proc_duration( p.is_ptr() ? p.sets->set( PRIEST_SHADOW, TWW2, B4 )->effectN( 1 ).time_value() : 0_s ),
-      pi_value( player->buffs.power_infusion->default_value )
+      tww2_pi_proc_duration( p.sets->set( PRIEST_SHADOW, TWW2, B4 )->effectN( 1 ).time_value() ),
+      pi_value( player->buffs.power_infusion->default_value +
+                p.talents.archon.concentrated_infusion->effectN( 1 ).percent() )
   {
     cooldown->duration = 0_s;
     track_cd_waste     = false;
 
     base_multiplier *= effectiveness;
-    // TODO: Check if works on Insanity
-    energize_amount *= effectiveness;
-    // TODO: Confirm Archon Interaction player->buffs.power_infusion->default_value +
-    // p.talents.archon.concentrated_infusion->effectN( 1 ).percent()
-    //    tww2_voidbolt_modifier( p.is_ptr() ? p.sets->set( PRIEST_SHADOW, TWW2, B2 )->effectN( 1 ).percent() : 0.0 )
+
+    if ( !p.options.shadow_tww2_4pc_insanity )
+      energize_amount = 0;
+  }
+
+  void_bolt_proc_t( priest_t& p, util::string_view name )
+    : void_bolt_proc_t( p, name, p.sets->set( PRIEST_SHADOW, TWW2, B2 )->effectN( 1 ).percent() )
+  {
   }
 
   void execute() override
   {
-    // TODO: Check ordering
     if ( p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B4 ) )
     {
       if ( player->buffs.power_infusion->check() )
       {
-        // TODO: check if resets PI or not.
-        if ( player->buffs.power_infusion->current_value != pi_value )
-        {
-          player->buffs.power_infusion->current_value = pi_value;
-          player->buffs.power_infusion->invalidate_cache();
-        }
-        player->buffs.power_infusion->extend_duration( player, tww2_pi_proc_duration );
+        auto extend_amount = std::min( tww2_pi_proc_duration, 30_s - player->buffs.power_infusion->remains() );
+        if ( extend_amount > 0_s )
+          player->buffs.power_infusion->extend_duration( player, extend_amount );
       }
       else
       {
@@ -1329,8 +1336,7 @@ struct dark_ascension_t final : public priest_spell_t
   void_bolt_proc_t* void_bolt_damage_action;
 
   dark_ascension_t( priest_t& p, util::string_view options_str )
-    : priest_spell_t( "dark_ascension", p, p.talents.shadow.dark_ascension ),
-      void_bolt_damage_action( nullptr )
+    : priest_spell_t( "dark_ascension", p, p.talents.shadow.dark_ascension ), void_bolt_damage_action( nullptr )
   {
     parse_options( options_str );
 
@@ -1340,17 +1346,18 @@ struct dark_ascension_t final : public priest_spell_t
     base_td_multiplier = 0;
     dot_duration       = timespan_t::from_seconds( 0 );
 
-    if ( p.is_ptr() && p.sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
+    if ( p.sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
     {
       void_bolt_damage_action = p.get_secondary_action<void_bolt_proc_t>( "void_bolt_tww2_2pc_dark_ascension",
                                                                           "void_bolt_tww2_2pc_dark_ascension" );
+
       if ( void_bolt_damage_action )
       {
         add_child( void_bolt_damage_action );
       }
     }
   }
-  
+
   void execute() override
   {
     priest_spell_t::execute();
@@ -1369,10 +1376,11 @@ struct dark_ascension_t final : public priest_spell_t
     {
       priest().buffs.ancient_madness->trigger();
     }
-        
-    if ( p().is_ptr() && p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
+
+    if ( p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
     {
-      void_bolt_damage_action->execute_on_target( target );
+      if ( !sim->target_non_sleeping_list.empty() )
+        void_bolt_damage_action->execute_on_target( rng().range( sim->target_non_sleeping_list ) );
     }
   }
 
@@ -1408,8 +1416,7 @@ struct void_eruption_t final : public priest_spell_t
   void_bolt_proc_t* void_bolt_damage_action;
 
   void_eruption_t( priest_t& p, util::string_view options_str )
-    : priest_spell_t( "void_eruption", p, p.talents.shadow.void_eruption ),
-      void_bolt_damage_action( nullptr )
+    : priest_spell_t( "void_eruption", p, p.talents.shadow.void_eruption ), void_bolt_damage_action( nullptr )
   {
     parse_options( options_str );
 
@@ -1419,10 +1426,11 @@ struct void_eruption_t final : public priest_spell_t
     may_miss = false;
     aoe      = -1;
 
-    if ( p.is_ptr() && p.sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
+    if ( p.sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
     {
       void_bolt_damage_action = p.get_secondary_action<void_bolt_proc_t>( "void_bolt_tww2_2pc_void_eruption",
-                                                                               "void_bolt_tww2_2pc_void_eruption" );
+                                                                          "void_bolt_tww2_2pc_void_eruption" );
+
       if ( void_bolt_damage_action )
       {
         add_child( void_bolt_damage_action );
@@ -1444,7 +1452,7 @@ struct void_eruption_t final : public priest_spell_t
       priest().buffs.sustained_potency->expire();
     }
 
-    if ( p().is_ptr() && p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
+    if ( p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
     {
       void_bolt_damage_action->execute_on_target( target );
     }
@@ -2480,10 +2488,9 @@ void priest_t::init_rng_shadow()
   rppm.deathspeaker           = get_rppm( "deathspeaker", talents.shadow.deathspeaker );
   rppm.power_of_the_dark_side = get_rppm( "power_of_the_dark_side", talents.discipline.power_of_the_dark_side );
 
-
   // Shadowy Insight
   const dot_t* shadow_word_pain = get_dot( "shadow_word_pain", this );
-  double mod = sets->has_set_bonus( PRIEST_SHADOW, T30, B2 ) ? 1.25 : 1.0;
+  double mod                    = sets->has_set_bonus( PRIEST_SHADOW, T30, B2 ) ? 1.25 : 1.0;
 
   threshold_rng.shadowy_insight =
       get_threshold_rng( "shadowy_insight", talents.shadow.shadowy_insight.ok() ? 0.1558 * mod : 0.0,
@@ -2573,7 +2580,7 @@ void priest_t::init_spells_shadow()
 
 void priest_t::init_special_effects_shadow()
 {
-  if ( is_ptr() && sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
+  if ( sets->has_set_bonus( PRIEST_SHADOW, TWW2, B2 ) )
   {
     struct shadow_tww2_2pc : public dbc_proc_callback_t
     {
@@ -2601,19 +2608,18 @@ void priest_t::init_special_effects_shadow()
         if ( s->target->is_sleeping() )
           return;
 
-        double da = s->result_amount;
-        if ( da > 0 )
-        {
-          void_bolt_damage_action->execute_on_target( s->target );
-        }
+        void_bolt_damage_action->execute_on_target( s->target );
       }
     };
 
-    auto set_spell       = sets->set( PRIEST_SHADOW, TWW2, B2 );
-    auto set_effect      = new special_effect_t( this );
-    set_effect->name_str = set_spell->name_cstr();
-    set_effect->type     = SPECIAL_EFFECT_EQUIP;
-    set_effect->spell_id = set_spell->id();
+    auto set_spell           = sets->set( PRIEST_SHADOW, TWW2, B2 );
+    auto set_effect          = new special_effect_t( this );
+    set_effect->name_str     = util::tokenize_fn( set_spell->name_cstr() );
+    set_effect->type         = SPECIAL_EFFECT_EQUIP;
+    set_effect->proc_flags_  = PF_CAST_SUCCESSFUL;
+    set_effect->proc_flags2_ = PF2_CAST_DAMAGE;
+    set_effect->spell_id     = set_spell->id();
+    special_effects.push_back( set_effect );
 
     new shadow_tww2_2pc( this, *set_effect );
   }

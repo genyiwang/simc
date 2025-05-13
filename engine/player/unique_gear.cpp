@@ -4324,7 +4324,7 @@ struct item_has_use_expr_t : public item_effect_expr_t
   {
     for ( auto e : effects )
     {
-      if ( e->cooldown() != 0_ms && e->rppm() == 0 )  // Technically, rppm doesn't have a cooldown.
+      if ( e->type == SPECIAL_EFFECT_USE )
       {
         has_use = true;
         break;
@@ -4440,6 +4440,28 @@ struct item_has_use_expr_t : public item_effect_expr_t
   double evaluate() override
   {
     return v;
+  }
+};
+
+struct item_cooldown_category_expr_t : public item_effect_base_expr_t
+{
+  item_cooldown_category_expr_t( player_t& player, const std::vector<slot_e>& slots,
+                                 util::string_view full_expression )
+    : item_effect_base_expr_t( player, slots, full_expression )
+  {
+  }
+
+  bool is_constant() override
+  {
+    return true;
+  }
+
+  double evaluate() override
+  {
+    for ( auto effect : effects )
+      if ( auto cd_group = effect->cooldown_group(); cd_group )
+        return cd_group;
+    return 0.0;
   }
 };
 
@@ -4645,6 +4667,9 @@ std::unique_ptr<expr_t> unique_gear::create_expression( player_t& player, util::
   {
     return std::make_unique<item_ready_expr_t>( player, slots, name_str );
   }
+
+  if ( util::str_compare_ci (splits[ ptype_idx ], "cooldown_category" ) )
+    return std::make_unique<item_cooldown_category_expr_t>( player, slots, name_str );
 
   throw std::invalid_argument( fmt::format( "Unsupported unique gear expression '{}'.", splits.back() ) );
 }

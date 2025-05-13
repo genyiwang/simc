@@ -859,13 +859,24 @@ public:
     // Chance for Entropic Rift ticks to miss all targets and deal no damage
     // Can be used to account for boss movement
     double entropic_rift_miss_percent = 0.05;
+    // Can be used to account for add movement
+    double entropic_rift_miss_percent_secondary = 0.1;
+    // Can be used to limit the number of enemies hit
+    int entropic_rift_miss_target_cap = 0;
 
     // Additional Crystalline Reflection Damage Multiplier (Because its bugged and doesnt always do full damage)
     double crystalline_reflection_damage_mult = 0.5;
-    bool no_channel_macro_mfi = false;
+    bool no_channel_macro_mfi                 = false;
 
     // Controls whether Discipline is "in a raid" or not.
     bool discipline_in_raid = false;
+
+    bool shadow_tww2_4pc_insanity = true;
+
+    // 30% Chance that a Fire Mage steals the proc because you are slow or you just dont hit it or it just bugs out.
+    double synergistic_brewterializer_tof_chance = 0.7;
+    // ~20% damage penalty to account for GCD. ~10% Miss general chance.
+    double synergistic_brewterializer_barrel_hit_chance = 0.75;
   } options;
 
   priest_t( sim_t* sim, util::string_view name, race_e r );
@@ -1236,9 +1247,10 @@ public:
         parse_effects( p().buffs.devouring_chorus );
       }
 
-      if ( p().is_ptr() && p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B4 ) )
+      if ( p().sets->has_set_bonus( PRIEST_SHADOW, TWW2, B4 ) )
       {
-        parse_effects( ab::player->buffs.power_infusion, p().sets->set( PRIEST_SHADOW, TWW2, B4 ) );
+        parse_effects( ab::player->buffs.power_infusion,
+                       p().sets->set( PRIEST_SHADOW, TWW2, B4 )->effectN( 2 ).percent() );
       }
     }
 

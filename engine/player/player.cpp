@@ -3417,12 +3417,18 @@ void player_t::create_actions()
   if ( !action_list_str.empty() )
     get_action_priority_list( "default" )->action_list_str = action_list_str;
 
+  if ( is_player() && sim->enable_all_item_effects )
+  {
+    auto& def = get_action_priority_list( "default" )->action_list;
+    def.insert( def.begin(), { "use_item,slot=shirt", "" } );
+  }
+
   int j = 0;
 
   auto apls = sorted_action_priority_lists( this );
   for ( auto apl : apls )
   {
-    assert( !( !apl->action_list_str.empty() && !apl->action_list.empty() ) );
+    assert( apl->action_list_str.empty() || apl->action_list.empty() );
 
     // Convert old style action list to new style, all lines are without comments
     if ( !apl->action_list_str.empty() )
@@ -3688,15 +3694,13 @@ void player_t::init_assessors()
 
   // Generic actor callbacks
   assessor_out_damage.add( assessor::CALLBACKS, [this]( result_amount_type, action_state_t* state ) {
-    if ( !state->action->callbacks )
+    if ( state->action->callbacks && state->action->caster_callbacks )
     {
-      return assessor::CONTINUE;
+      proc_types pt   = state->proc_type();
+      proc_types2 pt2 = state->impact_proc_type2();
+      if ( pt != PROC1_INVALID && pt2 != PROC2_INVALID )
+        trigger_callbacks( pt, pt2, state->action, state );
     }
-
-    proc_types pt   = state->proc_type();
-    proc_types2 pt2 = state->impact_proc_type2();
-    if ( pt != PROC1_INVALID && pt2 != PROC2_INVALID )
-      trigger_callbacks( pt, pt2, state->action, state );
 
     return assessor::CONTINUE;
   } );
@@ -6727,12 +6731,18 @@ void player_t::enter_combat()
   if ( in_combat )
     return;
 
+  if ( sim->target_non_sleeping_list.size() == 0 )
+    return;
+
   in_combat = true;
 
   sim->print_log( "{} enters combat.", *this );
 
   for ( size_t i = 0; i < callbacks_on_combat_state.size(); ++i )
     callbacks_on_combat_state[ i ]( this, in_combat );
+
+  if ( race == RACE_NIGHT_ELF && buffs.shadowmeld->check() )
+    buffs.shadowmeld->expire();
 }
 
 void player_t::leave_combat()
@@ -7891,8 +7901,8 @@ void player_t::do_damage( action_state_t* incoming_state )
   }
 
   // New callback system; proc abilities on incoming events.
-  // TODO: How to express action causing/not causing incoming callbacks?
-  if ( incoming_state->action && incoming_state->action->callbacks && !incoming_state->action->suppress_target_procs )
+  if ( incoming_state->action && incoming_state->action->callbacks && incoming_state->action->target_callbacks &&
+       !incoming_state->action->suppress_target_procs )
   {
     proc_types pt = incoming_state->proc_type();
     if ( pt != PROC1_INVALID )
@@ -8031,6 +8041,8 @@ void player_t::assess_heal( school_e, result_amount_type, action_state_t* s )
 
   if ( buffs.blessing_of_spring->up() )
     s->result_total *= 1.0 + buffs.blessing_of_spring->data().effectN( 2 ).percent();
+
+  s->result_total *= composite_player_healing_received_multiplier();
 
   // process heal
   s->result_amount = resource_gain( RESOURCE_HEALTH, s->result_total, nullptr, s->action );
@@ -8294,13 +8306,13 @@ gain_t* player_t::get_gain( util::string_view name )
   return g;
 }
 
-proc_t* player_t::get_proc( util::string_view name )
+proc_t* player_t::get_proc( util::string_view name, unsigned flags )
 {
   proc_t* p = find_proc( name );
 
   if ( !p )
   {
-    p = new proc_t( *sim, name );
+    p = new proc_t( *sim, name, flags );
 
     proc_list.push_back( p );
   }
@@ -8857,24 +8869,32 @@ struct gift_of_the_naaru : public racial_heal_t
 
 struct ancestral_call_t : public racial_spell_t
 {
+  std::vector<std::tuple<buff_t*, stat_e, double>> stat_values;
+
   ancestral_call_t( player_t* p, util::string_view options_str ) :
     racial_spell_t( p, "ancestral_call", p->find_racial_spell( "Ancestral Call" ) )
   {
     parse_options( options_str );
     harmful = false;
     target = p;
+
+    for ( auto b : p->buffs.ancestral_call )
+      if ( !b->is_fallback )
+        stat_values.emplace_back( b, debug_cast<stat_buff_t*>( b )->stats.front().stat, 0.0 );
   }
 
   void execute() override
   {
     racial_spell_t::execute();
 
-    std::array<std::pair<buff_t*, double>, std::tuple_size_v<decltype( player->buffs.ancestral_call )>> stat_values;
-    auto& buffs = player->buffs.ancestral_call;
-    for ( int i = 0; i < buffs.size(); i++ )
-      stat_values[ i ] = { buffs[ i ], util::stat_value( player, debug_cast<stat_buff_t*>( buffs[ i ] )->stats.front().stat ) };
-    std::sort( stat_values.begin(), stat_values.end(), [] ( auto& a, auto& b ) { return a.second > b.second; } );
-    stat_values[ rng().range( 2 ) ].first->trigger();
+    for ( auto& stat : stat_values )
+      std::get<2>( stat ) = util::stat_value( player, std::get<1>( stat ) );
+
+    std::sort( stat_values.begin(), stat_values.end(), []( const auto& a, const auto& b ) {
+      return std::get<2>( a ) > std::get<2>( b );
+    } );
+
+    std::get<0>( stat_values[ rng().range( 2 ) ] )->trigger();
   }
 };
 
@@ -9478,6 +9498,9 @@ struct use_item_t : public action_t
       return false;
     }
 
+    if ( if_expr && !if_expr->success() )
+      return false;
+
     return action_t::ready();
   }
 
@@ -9536,6 +9559,48 @@ struct use_item_t : public action_t
   std::unique_ptr<expr_t> create_expression( util::string_view name ) override
   {
     auto split = util::string_split<util::string_view>( name, "." );
+
+    if ( split.size() > 1 && split[ 0 ] == "other_trinket" )
+    {
+      auto tail = name.substr( 14 );
+      slot_e s = util::parse_slot_type( item_slot );
+      
+      if ( s == SLOT_TRINKET_1 )
+        return unique_gear::create_expression( *player, fmt::format("trinket.2.{}", tail ) );
+      
+      if ( s == SLOT_TRINKET_2 )
+        return unique_gear::create_expression( *player, fmt::format("trinket.1.{}", tail ) );
+
+      throw std::invalid_argument( fmt::format( "Unsupported expression 'other_trinket' for '{}' slot", item_slot ) );
+    }
+
+    if ( split.size() > 1 && split[ 0 ] == "this_trinket" )
+    {
+      auto tail = name.substr( 13 );
+      slot_e s = util::parse_slot_type( item_slot );
+      
+      if ( s == SLOT_TRINKET_1 )
+        return unique_gear::create_expression( *player, fmt::format("trinket.1.{}", tail ) );
+      
+      if ( s == SLOT_TRINKET_2 )
+        return unique_gear::create_expression( *player, fmt::format("trinket.2.{}", tail ) );
+
+      throw std::invalid_argument( fmt::format( "Unsupported expression 'this_trinket' for '{}' slot", item_slot ) );
+    }
+
+    if ( split.size() == 1 && split[ 0 ] == "this_trinket_slot" )
+    {
+      slot_e s = util::parse_slot_type( item_slot );
+      
+      if ( s == SLOT_TRINKET_1 )
+        return std::make_unique<const_expr_t>( name, 1 );
+      
+      if ( s == SLOT_TRINKET_2 )
+        return std::make_unique<const_expr_t>( name, 2 );
+
+      throw std::invalid_argument( fmt::format( "Unsupported expression 'this_trinket_slot' for '{}' slot", item_slot ) );
+    }
+
     if ( auto e = create_special_effect_expr( split ) )
     {
       return e;
@@ -9612,6 +9677,7 @@ struct use_items_t : public action_t
   void init() override
   {
     create_use_subactions();
+    option.if_expr_str = "";
 
     // No use_item sub-actions created here, so this action does not need to execute ever. The
     // parent init() call below will filter it out from the "foreground action list".
@@ -9797,7 +9863,9 @@ struct use_items_t : public action_t
                                item.full_name().c_str(), item.slot_name() );
       }
 
-      use_actions.push_back( new use_item_t( player, std::string( "slot=" ) + item.slot_name() ) );
+      auto use_action = new use_item_t( player, std::string( "slot=" ) + item.slot_name() );
+      use_action->option.if_expr_str = option.if_expr_str;
+      use_actions.push_back( use_action );
 
       auto action = use_actions.back();
       // The use_item action is not triggered by the actor (through the APL), so background it
@@ -12850,16 +12918,11 @@ void player_t::create_options()
   add_option( opt_float( "thewarwithin.sureki_zealots_insignia_rppm_multiplier",
                          thewarwithin_opts.sureki_zealots_insignia_rppm_multiplier, 0, 1 ) );
   add_option( opt_string( "thewarwithin.windsingers_passive_stat", thewarwithin_opts.windsingers_passive_stat ) );
-  add_option( opt_bool( "thewarwithin.estimate_roaring_warqueens_citrine",
-                        thewarwithin_opts.estimate_roaring_warqueens_citrine ) );
-  add_option( opt_bool( "thewarwithin.force_estimate_skippers_group_benefit",
-                        thewarwithin_opts.force_estimate_skippers_group_benefit ) );
-  add_option( opt_bool( "thewarwithin.personal_estimate_skippers_group_benefit", 
-                        thewarwithin_opts.personal_estimate_skippers_group_benefit ) );
-  add_option( opt_bool( "thewarwithin.estimate_skippers_group_benefit", 
-                        thewarwithin_opts.estimate_skippers_group_benefit ) );
-  add_option( opt_float( "thewarwithin.estimate_skippers_group_members",
-                         thewarwithin_opts.estimate_skippers_group_members, 0, 999 ) );
+  add_option( opt_string( "thewarwithin.mister_locknstalk_mode", thewarwithin_opts.mister_locknstalk_mode ) );
+  add_option( opt_string( "thewarwithin.jastor_diamond_ally_stat", thewarwithin_opts.jastor_diamond_ally_stat ) );
+  add_option( opt_float( "thewarwithin.suspicious_energy_drink_bonus_chance",
+                         thewarwithin_opts.suspicious_energy_drink_bonus_chance, 0, 1 ) );
+  add_option( opt_timespan( "thewarwithin.additional_gcd_time", thewarwithin_opts.additional_gcd_time, 0_s, 10_s ) );
 }
 
 player_t* player_t::create( sim_t*, const player_description_t& )
