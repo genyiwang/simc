@@ -2,7 +2,7 @@ mage="TWW1_Mage_Frost_Frostfire"
 source=default
 spec=frost
 level=80
-race=dwarf
+race=human
 role=spell
 position=ranged_back
 # Mythic+
