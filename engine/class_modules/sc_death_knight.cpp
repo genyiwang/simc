@@ -1773,6 +1773,11 @@ public:
   // Character Definition overrides
   void init_spells() override;
   void init_action_list() override;
+  void init_blizzard_action_list() override;
+  void parse_assisted_combat_step( const assisted_combat_step_data_t& step, action_priority_list_t* assisted_combat ) override;
+  std::string parse_assisted_combat_rule( const assisted_combat_rule_data_t& rule, const assisted_combat_step_data_t& step ) const override;
+  std::vector<std::string> action_names_from_spell_id( unsigned int spell_id ) const override;
+  std::string aura_expr_from_spell_id( unsigned int spell_id, bool on_self ) const override;
   void init_rng() override;
   void init_base_stats() override;
   void init_scaling() override;
@@ -1856,6 +1861,7 @@ public:
   double tick_damage_over_time( timespan_t duration, const dot_t* dot ) const;
   double psuedo_random_p_from_c( double c );
   double pseudo_random_c_from_p( double p );
+  std::string blizzard_apl_action_replace( std::string options );
   // Rider of the Apocalypse
   int get_random_rider();
   void summon_rider( timespan_t duration, bool random );
@@ -13841,6 +13847,164 @@ void death_knight_t::init_action_list()
   player_t::init_action_list();
 }
 
+// death_knight_t::init_blizzard_action_list ================================
+void death_knight_t::init_blizzard_action_list()
+{
+  if ( main_hand_weapon.type == WEAPON_NONE )
+  {
+    if ( !quiet )
+      sim->errorf( "Player %s has no weapon equipped at the Main-Hand slot.", name() );
+    quiet = true;
+    return;
+  }
+
+  if ( main_hand_weapon.group() == WEAPON_2H && off_hand_weapon.type != WEAPON_NONE )
+  {
+    if ( !quiet )
+      sim->errorf( "Player %s has an Off-Hand weapon equipped with a 2h.", name() );
+    quiet = true;
+    return;
+  }
+
+  action_priority_list_t* default_ = get_action_priority_list( "default" );
+  default_->add_action( "auto_attack" );  // Add before generating the other actions so its always the highest priority
+  player_t::init_blizzard_action_list();
+
+  action_priority_list_t* pre_c = get_action_priority_list( "precombat" );
+  if (specialization() == DEATH_KNIGHT_UNHOLY)
+    pre_c->add_action( "raise_dead" );
+
+  action_priority_list_t* cooldowns = get_action_priority_list( "cooldowns" );
+
+  switch ( specialization() )
+  {
+    case DEATH_KNIGHT_BLOOD:
+      cooldowns->add_action( "vampiric_blood" );
+      cooldowns->add_action( "tombstone,if=buff.bone_shield.stack>5" );
+      cooldowns->add_action( "abomination_limb" );
+      cooldowns->add_action( "raise_dead" );
+      break;
+    case DEATH_KNIGHT_FROST:
+      cooldowns->add_action( "breath_of_sindragosa,if=runic_power>60" );
+      cooldowns->add_action( "empower_rune_weapon" );
+      cooldowns->add_action( "abomination_limb" );
+      break;
+    case DEATH_KNIGHT_UNHOLY:
+      cooldowns->add_action( "raise_abomination" );
+      cooldowns->add_action( "army_of_the_dead" );
+      cooldowns->add_action( "summon_gargoyle,if=runic_power>30" );
+      cooldowns->add_action( "abomination_limb" );
+      break;
+    default:
+      break;
+  }
+}
+
+// death_knight_t::parse_assisted_combat_rule ===============================
+std::string death_knight_t::parse_assisted_combat_rule( const assisted_combat_rule_data_t& rule,
+                                                        const assisted_combat_step_data_t& step ) const
+{
+  // Blizz uses 5 in their apl, making the condition <5, however, this should be <6 to align with
+  // distance targeting, as well, this makes it work correctly in simc
+  if ( rule.condition_type == TARGET_DISTANCE_LESS && rule.condition_value_1 == 5 )
+  {
+    assisted_combat_rule_data_t rule_copy = rule;
+    rule_copy.condition_value_1 = 6;
+    return player_t::parse_assisted_combat_rule( rule_copy, step );
+  }
+  return player_t::parse_assisted_combat_rule( rule, step );
+}
+
+// death_knight_t::blizzard_apl_action_replace ================================
+std::string death_knight_t::blizzard_apl_action_replace( std::string options )
+{
+  switch ( specialization() )
+  {
+    case DEATH_KNIGHT_BLOOD:
+      break;
+    case DEATH_KNIGHT_FROST:
+      break;
+    case DEATH_KNIGHT_UNHOLY:
+      if ( options.find( "talent.clawing_shadows" ) != std::string::npos )
+        return "clawing_shadows";
+      break;
+    default:
+      break;
+  }
+
+  return "";
+}
+
+// death_knight_t::parse_assisted_combat_step ===============================
+void death_knight_t::parse_assisted_combat_step( const assisted_combat_step_data_t& step,
+                                                 action_priority_list_t* assisted_combat )
+{
+  std::string options = "";
+  std::string rule_str;
+  for ( const auto& rule : assisted_combat_rule_data_t::data( step.id, is_ptr() ) )
+  {
+    std::string rule_str = parse_assisted_combat_rule( rule, step );
+    if ( !rule_str.empty() )
+      options += options.empty() ? rule_str : "&" + rule_str;
+  }
+
+  // This is kinda ugly, maybe find a better way to do this?
+  if ( !options.empty() )
+  {
+    std::string name = blizzard_apl_action_replace( options );
+    if ( name != "" )
+    {
+      assisted_combat->add_action( name + ",if=" + options );
+      return;
+    }
+  }
+
+  for ( const auto& name : action_names_from_spell_id( step.spell_id ) )
+  {
+    if ( !name.empty() )
+    {
+      if ( options.empty() )
+        assisted_combat->add_action( name );
+      else
+        assisted_combat->add_action( name + ",if=" + options );
+    }
+  }
+}
+
+// death_knight_t::action_names_from_spell_id ===============================
+std::vector<std::string> death_knight_t::action_names_from_spell_id( unsigned int spell_id ) const
+{
+  if ( spell_id == 316239 )  // Rune Strike
+  {
+    switch ( specialization() )
+    {
+      case DEATH_KNIGHT_BLOOD:
+        spell_id = talent.blood.heart_strike->id();
+        break;
+      case DEATH_KNIGHT_FROST:
+        spell_id = talent.frost.obliterate
+                       ->id();  // Seems they use Obliterate as a replacement for Rune Strike rather than Frost Strike
+        break;
+      case DEATH_KNIGHT_UNHOLY:
+        spell_id = talent.unholy.festering_strike->id();
+        break;
+      default:
+        break;
+    }
+  }
+
+  return player_t::action_names_from_spell_id( spell_id );
+}
+
+std::string death_knight_t::aura_expr_from_spell_id( unsigned int spell_id, bool on_self ) const
+{
+  std::string aura_expr = player_t::aura_expr_from_spell_id( spell_id, on_self );
+  if ( aura_expr == "debuff.reapers_mark" )
+    aura_expr.append( "_debuff" );
+
+  return aura_expr;
+}
+
 // death_knight_t::init_scaling =============================================
 
 void death_knight_t::init_scaling()
@@ -14055,7 +14219,7 @@ void death_knight_t::create_buffs()
           ->set_stack_change_callback( [ this ]( buff_t*, int, int new_ ) {
             if ( talent.deathbringer.dark_talons.ok() )
             {
-              if ( new_ == 1 )
+              if ( new_ >= 1 )
               {
                 buffs.dark_talons_shadowfrost->trigger();
               }

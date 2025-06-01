@@ -1,4 +1,4 @@
-SimulationCraft 1115-02 for World of Warcraft 11.1.7.60672 PTR
+SimulationCraft 1115-02 for World of Warcraft 11.1.7.61048 PTR
 Name             : Eye of Kilrogg (id=126) [Spell Family (5)] 
 Class            : Warlock
 School           : Shadow
@@ -50,7 +50,7 @@ Effects          :
 Description      : Corrupts the target, causing $s3 Shadow damage and $?a196103[$146739s1 Shadow damage every $146739t1 sec.][an additional $146739o1 Shadow damage over $146739d.]
 
 Name             : Immolate (id=348) [Spell Family (5)] 
-Class            : Warlock
+Class            : Destruction Warlock
 School           : Fire
 Spell Type       : Magic
 Resource         : 1.5% Base Mana (0) (id=43)
@@ -17228,7 +17228,9 @@ Labels           : 16: Class Spells
 Attributes       : Is Ability (4), Displayed Outside Of Spellbook (432)
 Effects          :
 #1 (id=1220649)  : Dummy (3)
-                   Base Value: 3 | Scaled Value: 3 | Target: Any Target (25)
-Description      : Casts a rotation of damaging abilities for use in combat. Abilities used through the Single-Button Assistant incur an additional ${$s1/10}.1 second global cooldown.
+                   Base Value: 25 | Scaled Value: 25 | Target: Any Target (25)
+Description      : Casts damaging abilities for use in combat, rotating through them based on priority.
+
+The global cooldown of abilities used through the Single-Button Assistant is $s1% longer.
 
 

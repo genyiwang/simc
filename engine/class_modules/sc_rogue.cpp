@@ -5364,6 +5364,15 @@ struct mutilate_t : public rogue_attack_t
 
   bool has_amount_result() const override
   { return true; }
+
+  bool ready() override
+  {
+    // Blindside overrides Mutilate with Ambush in the action bar when the buff is present
+    if ( p()->buffs.blindside->check() )
+      return false;
+
+    return rogue_attack_t::ready();
+  }
 };
 
 // Roll the Bones ===========================================================
@@ -5663,7 +5672,8 @@ struct secret_technique_t : public rogue_attack_t
       rogue_attack_t( name, p, s )
     {
       aoe = -1;
-      reduced_aoe_targets = p->talent.subtlety.secret_technique->effectN( 6 ).base_value();
+      full_amount_targets = 1; // 2025-05-30 -- Primary target is not reduced by sqrt scaling
+      reduced_aoe_targets = p->talent.subtlety.secret_technique->effectN( 6 ).base_value() - 1;
     }
 
     double composite_player_multiplier( const action_state_t* state ) const override
