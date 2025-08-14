@@ -362,6 +362,8 @@ action_t::action_t( action_e ty, util::string_view token, player_t* p, const spe
     use_off_gcd(),
     use_while_casting(),
     usable_while_casting(),
+    can_have_one_button_penalty(),
+    cooldown_allow_casting_success( true ),
     interrupt_auto_attack( true ),
     reset_auto_attack(),
     ignore_false_positive(),
@@ -540,17 +542,17 @@ action_t::action_t( action_e ty, util::string_view token, player_t* p, const spe
     background = true;
   }
 
-  add_option( opt_string( "if", option.if_expr_str ) );
-  add_option( opt_string( "interrupt_if", option.interrupt_if_expr_str ) );
-  add_option( opt_string( "early_chain_if", option.early_chain_if_expr_str ) );
-  add_option( opt_string( "cancel_if", option.cancel_if_expr_str ) );
+  add_option( opt_string_warn( "if", option.if_expr_str ) );
+  add_option( opt_string_warn( "interrupt_if", option.interrupt_if_expr_str ) );
+  add_option( opt_string_warn( "early_chain_if", option.early_chain_if_expr_str ) );
+  add_option( opt_string_warn( "cancel_if", option.cancel_if_expr_str ) );
   add_option( opt_bool( "interrupt", option.interrupt ) );
   add_option( opt_bool( "interrupt_global", interrupt_global ) );
   add_option( opt_bool( "chain", option.chain ) );
   add_option( opt_bool( "cycle_targets", option.cycle_targets ) );
   add_option( opt_bool( "cycle_players", option.cycle_players ) );
   add_option( opt_int( "max_cycle_targets", option.max_cycle_targets ) );
-  add_option( opt_string( "target_if", option.target_if_str ) );
+  add_option( opt_string_warn( "target_if", option.target_if_str ) );
   add_option( opt_bool( "moving", option.moving ) );
   add_option( opt_string( "sync", option.sync_str ) );
   add_option( opt_bool( "wait_on_ready", option.wait_on_ready ) );
@@ -562,6 +564,8 @@ action_t::action_t( action_e ty, util::string_view token, player_t* p, const spe
   add_option( opt_bool( "interrupt_immediate", option.interrupt_immediate ) );
   add_option( opt_bool( "use_off_gcd", use_off_gcd ) );
   add_option( opt_bool( "use_while_casting", use_while_casting ) );
+  add_option( opt_string( "can_have_one_button_penalty", option.can_have_one_button_penalty_str ) );
+  add_option( opt_string( "cooldown_allow_casting_success", option.cooldown_allow_casting_success_str ) );
 }
 
 action_t::~action_t()
@@ -603,6 +607,19 @@ bool action_t::has_direct_damage_effect( const spell_data_t& spell )
 bool action_t::has_periodic_damage_effect( const spell_data_t& spell )
 {
   return range::any_of( spell.effects(), is_periodic_damage_effect );
+}
+
+bool action_t::does_direct_damage() const
+{
+  return has_direct_damage_effect( data() ) || base_dd_min > 0 || spell_power_mod.direct > 0 ||
+         attack_power_mod.direct > 0 || weapon_multiplier > 0;
+}
+
+bool action_t::does_periodic_damage() const
+{
+  return has_periodic_damage_effect( data() ) ||
+         ( ( base_td > 0 || spell_power_mod.tick > 0 || attack_power_mod.tick > 0 || rolling_periodic ) &&
+           dot_duration > 0_ms );
 }
 
 /**
@@ -689,22 +706,34 @@ void action_t::parse_spell_data( const spell_data_t& spell_data )
     aoe = spell_data.max_targets();
 
   const auto spell_powers = spell_data.powers();
+  bool require_spec_aura = false;
+
   if ( spell_powers.size() == 1 && spell_powers.front().aura_id() == 0 )
   {
     resource_current = spell_powers.front().resource();
   }
+  // Find the first power entry without a aura id
+  else if ( auto it = range::find( spell_powers, 0U, &spellpower_data_t::aura_id ); it != spell_powers.end() )
+  {
+    resource_current = it->resource();
+  }
+  // If all entries have an aura, find the one matching the spec aura
+  else if ( auto it = range::find( spell_powers, player->spec_spell->id(), &spellpower_data_t::aura_id );
+            it != spell_powers.end() )
+  {
+    resource_current = it->resource();
+    require_spec_aura = true;
+  }
   else
   {
-    // Find the first power entry without a aura id
-    auto it = range::find( spell_powers, 0U, &spellpower_data_t::aura_id );
-    if ( it != spell_powers.end() )
-    {
-      resource_current = it->resource();
-    }
+    sim->print_debug( "{} could not determine resource for {}.", *player, *this );
   }
 
   for ( const spellpower_data_t& pd : spell_powers )
   {
+    if ( require_spec_aura && pd.aura_id() != player->spec_spell->id() )
+      continue;
+
     if ( pd._cost != 0 )
       base_costs[ pd.resource() ] = pd.cost();
     else
@@ -969,14 +998,39 @@ void action_t::parse_options( util::string_view options_str )
         // .. otherwise, just warn that there's an unknown option
         if ( status == opts::parse_status::NOT_FOUND )
         {
-          sim->error( "Warning: Unknown '{}' option '{}' with value '{}' for {}, ignoring",
-            this->name(), name, value, player->name() );
+          sim->error( "{} {} unknown option '{}' with value '{}', ignoring.", *player, *this, name, value );
+        }
+
+        // warn on if= overwriting a previous if=
+        if ( status == opts::parse_status::WARNING )
+        {
+          sim->error( "{} {} option '{}' with value '{}' overwriting previous value.", *player, *this, name, value );
         }
 
         return status;
       } );
 
     parse_target_str();
+
+    auto parse_bool = [ this ]( bool& b, std::string_view n, std::string_view v )
+    {
+      if ( v.empty() )
+        return;
+
+      if ( v != "0" && v != "1" )
+      {
+        throw std::invalid_argument( fmt::format( "Acceptable '{}' option '{}' values are '1' or '0' for {}",
+                                                  this->name(), n, player->name() ) );
+      }
+
+      if ( v == "0" )
+        b = false;
+      else
+        b = true;
+    };
+
+    parse_bool( can_have_one_button_penalty,    "can_have_one_button_penalty",    option.can_have_one_button_penalty_str );
+    parse_bool( cooldown_allow_casting_success, "cooldown_allow_casting_success", option.cooldown_allow_casting_success_str );
   }
   catch ( const std::exception& e )
   {
@@ -1218,7 +1272,7 @@ timespan_t action_t::gcd() const
   }
 
   // TODO: Figure out how this works for spells with cast times.
-  if ( gcd_ != timespan_t::zero() && player->is_player() && player->one_button_mode )
+  if ( gcd_ != timespan_t::zero() && player->is_player() && player->one_button_mode && can_have_one_button_penalty )
     gcd_ *= 1.0 + player->single_button_assistant->effectN( 1 ).percent();
 
   return gcd_;
@@ -2196,6 +2250,25 @@ void action_t::schedule_execute( action_state_t* state )
       player->schedule_cwc_ready( timespan_t::zero() );
     }
 
+    if ( player->enable_spell_queue && time_to_execute > player->spell_queue_window )
+    {
+      if ( player->spell_queue_event )
+        event_t::cancel( player->spell_queue_event );
+
+      player->spell_queue_event = make_event( *sim, time_to_execute - player->spell_queue_window, [ this ]
+      {
+        if ( player->executing != this )
+        {
+          player->spell_queue_event = nullptr;
+          return;
+        }
+
+        player->visited_apls_ = 0;  // Reset visited apl list
+        player->spell_queued_action = player->select_action( *player->active_action_list, execute_type::FOREGROUND );
+        player->spell_queue_event = nullptr;
+      } );
+    }
+
     // While an ability is casting, the auto_attack is paused
     // So we simply reschedule the auto_attack by the ability's cast time
     if ( special && time_to_execute > timespan_t::zero() && !proc && ( interrupt_auto_attack || reset_auto_attack ) )
@@ -2513,7 +2586,20 @@ bool action_t::action_ready()
   if ( if_expr && !if_expr->success() )
     return false;
 
+  if ( !cooldown_allow_casting_success &&
+       ( ( player->last_foreground_action == this && player->last_foreground_action->time_to_execute > 0_ms ) ||
+         ( player->executing == this ) ) )
+  {
+    return false;
+  }
+
   return true;
+}
+
+bool action_t::cost_affordable()
+{
+  auto resource = current_resource();
+  return resource == RESOURCE_NONE || player->resource_available( resource, cost() );
 }
 
 // Properties that govern if the spell itself is executable, without considering any kind of user
@@ -2530,8 +2616,7 @@ bool action_t::ready()
   if ( player->is_moving() && !usable_moving() )
     return false;
 
-  auto resource = current_resource();
-  if ( resource != RESOURCE_NONE && !player->resource_available( resource, cost() ) )
+  if ( !cost_affordable() )
   {
     if ( starved_proc )
       starved_proc->occur();
@@ -2621,15 +2706,12 @@ void action_t::init()
   if ( may_crit || tick_may_crit )
     snapshot_flags |= STATE_CRIT | STATE_TGT_CRIT;
 
-  if ( has_periodic_damage_effect( data() ) ||
-       ( ( base_td > 0 || spell_power_mod.tick > 0 || attack_power_mod.tick > 0 || rolling_periodic ) &&
-         dot_duration > 0_ms ) )
+  if ( does_periodic_damage() )
   {
     snapshot_flags |= STATE_MUL_TA | STATE_TGT_MUL_TA | STATE_MUL_PERSISTENT | STATE_VERSATILITY;
   }
 
-  if ( has_direct_damage_effect( data() ) || base_dd_min > 0 || spell_power_mod.direct > 0 ||
-       attack_power_mod.direct > 0 || weapon_multiplier > 0 )
+  if ( does_direct_damage() )
   {
     snapshot_flags |= STATE_MUL_DA | STATE_TGT_MUL_DA | STATE_MUL_PERSISTENT | STATE_VERSATILITY;
   }
@@ -3138,6 +3220,9 @@ std::unique_ptr<expr_t> action_t::create_expression( std::string_view name )
 
   if ( name == "cost" )
     return make_mem_fn_expr( name, *this, &action_t::cost );
+
+  if ( name == "cost_affordable" )
+    return make_mem_fn_expr( name, *this, &action_t::cost_affordable );
 
   if ( name == "target" )
     return make_fn_expr( name, [this] { return target->actor_index; } );
@@ -3947,20 +4032,23 @@ std::unique_ptr<expr_t> action_t::create_expression( std::string_view name )
     return std::make_unique<target_proxy_expr_t>( *this, tail );
   }
 
-  if ( ( splits.size() == 3 && splits[ 0 ] == "action" ) || splits[ 0 ] == "in_flight" ||
-       splits[ 0 ] == "in_flight_to_target" || splits[ 0 ] == "in_flight_remains" || splits[ 0 ] == "in_flight_to_target_count" )
+  auto is_in_flight_expr_name = [] ( std::string_view str ) {
+    return str == "in_flight" || str == "in_flight_count" || str == "in_flight_to_target" ||
+           str == "in_flight_remains" || str == "in_flight_to_target_count";
+  };
+
+  if ( ( splits.size() == 3 && splits[ 0 ] == "action" ) || is_in_flight_expr_name( splits[ 0 ] ) )
   {
     std::vector<action_t*> in_flight_list;
-    bool in_flight_singleton = ( splits[ 0 ] == "in_flight" || splits[ 0 ] == "in_flight_to_target" ||
-                                 splits[ 0 ] == "in_flight_remains" || splits[ 0 ] == "in_flight_to_target_count" );
-    auto action_name  = ( in_flight_singleton ) ? name_str : splits[ 1 ];
+    bool in_flight_singleton = is_in_flight_expr_name( splits[ 0 ] );
+    auto action_name = in_flight_singleton ? name_str : splits[ 1 ];
+    bool is_in_flight_expr = in_flight_singleton || is_in_flight_expr_name( splits[ 2 ] );
     for ( size_t i = 0; i < player->action_list.size(); ++i )
     {
       action_t* action = player->action_list[ i ];
       if ( action->name_str == action_name )
       {
-        if ( in_flight_singleton || splits[ 2 ] == "in_flight" ||
-          splits[ 2 ] == "in_flight_to_target" || splits[ 2 ] == "in_flight_remains" )
+        if ( is_in_flight_expr )
         {
           in_flight_list.push_back( action );
         }
@@ -3970,6 +4058,7 @@ std::unique_ptr<expr_t> action_t::create_expression( std::string_view name )
         }
       }
     }
+
     if ( !in_flight_list.empty() )
     {
       if ( splits[ 0 ] == "in_flight" || ( !in_flight_singleton && splits[ 2 ] == "in_flight" ) )
@@ -3990,6 +4079,20 @@ std::unique_ptr<expr_t> action_t::create_expression( std::string_view name )
           }
         };
         return std::make_unique<in_flight_multi_expr_t>( std::move(in_flight_list) );
+      }
+      else if ( splits[ 0 ] == "in_flight_count" || ( !in_flight_singleton && splits[ 2 ] == "in_flight_count" ) )
+      {
+        struct in_flight_count_multi_expr_t : public expr_t
+        {
+          const std::vector<action_t*> action_list;
+          in_flight_count_multi_expr_t( std::vector<action_t*> al ) : expr_t( "in_flight_count" ), action_list( std::move( al ) )
+          { }
+          double evaluate() override
+          { return 1.0 * range::accumulate( action_list, 0, [] ( const auto* a ) { return a->num_travel_events(); } ); }
+          bool is_constant() override
+          { return action_list.empty(); }
+        };
+        return std::make_unique<in_flight_count_multi_expr_t>( std::move( in_flight_list ) );
       }
       else if ( splits[ 0 ] == "in_flight_to_target" ||
                 ( !in_flight_singleton && splits[ 2 ] == "in_flight_to_target" ) )
@@ -4966,9 +5069,9 @@ player_t* action_t::get_expression_target()
   return ( target == player ) ? player->target : target;
 }
 
-void action_t::gain_energize_resource( resource_e resource_type, double amount, gain_t* g )
+double action_t::gain_energize_resource( resource_e resource_type, double amount, gain_t* g )
 {
-  player->resource_gain( resource_type, amount, g, this );
+  return player->resource_gain( resource_type, amount, g, this );
 }
 
 bool action_t::usable_during_current_cast() const

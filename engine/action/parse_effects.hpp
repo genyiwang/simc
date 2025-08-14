@@ -48,6 +48,7 @@ struct player_effect_t
   std::function<double( double )> value_func = nullptr;
   uint16_t type = USE_DATA;
   bool mastery = false;
+  double base_mastery = 0.0;
   uint32_t idx = 0;  // index of parse_action_base_t::callback_list
   // effect linkback
   const spelleffect_data_t* eff = &spelleffect_data_t::nil();
@@ -75,6 +76,9 @@ struct player_effect_t
   player_effect_t& set_mastery( bool m )
   { mastery = m; simple = false; return *this; }
 
+  player_effect_t& set_base_mastery( double v )
+  { base_mastery = v; simple = false; return *this; }
+
   player_effect_t& set_idx( uint32_t i )
   { idx = i; simple = false; return *this; }
 
@@ -87,8 +91,8 @@ struct player_effect_t
   bool operator==( const player_effect_t& other )
   {
     return simple == other.simple && buff == other.buff && value == other.value && use_stacks == other.use_stacks &&
-           type == other.type && mastery == other.mastery && idx == other.idx && eff == other.eff &&
-           opt_enum == other.opt_enum;
+           type == other.type && mastery == other.mastery && base_mastery == other.base_mastery && idx == other.idx &&
+           eff == other.eff && opt_enum == other.opt_enum;
   }
 
   std::string value_type_name( uint16_t ) const;
@@ -105,6 +109,7 @@ struct target_effect_t
   double value = 0.0;
   uint16_t type = USE_DATA;  // for internal flags only
   bool mastery = false;
+  double base_mastery = 0.0;
   const spelleffect_data_t* eff = &spelleffect_data_t::nil();
   uint32_t opt_enum = UINT32_MAX;
 
@@ -117,6 +122,9 @@ struct target_effect_t
   target_effect_t& set_mastery( bool m )
   { mastery = m; return *this; }
 
+  target_effect_t& set_base_mastery( double v )
+  { base_mastery = v; return *this; }
+
   target_effect_t& set_eff( const spelleffect_data_t* e )
   { eff = e; return *this; }
 
@@ -125,7 +133,8 @@ struct target_effect_t
 
   bool operator==( const target_effect_t& other )
   {
-    return value == other.value && mastery == other.mastery && eff == other.eff && opt_enum == other.opt_enum;
+    return value == other.value && mastery == other.mastery && base_mastery == other.base_mastery && eff == other.eff &&
+           opt_enum == other.opt_enum;
   }
 
   std::string value_type_name( uint16_t ) const;
@@ -968,9 +977,33 @@ public:
     }
   }
 
+  template <typename U>
+  void remove_damage_entries( std::vector<U>& vec, std::string_view vec_name )
+  {
+    for ( const auto& data : vec )
+    {
+      BASE::sim->print_debug( "action-effects: non-damage action {} ({}) removing {} entry from {} ({}#{})",
+                              BASE::name(), BASE::id, vec_name, data.eff->spell()->name_cstr(), data.eff->spell_id(),
+                              data.eff->index() );
+    }
+
+    vec.clear();
+  }
+
   void init_finished() override
   {
     BASE::init_finished();
+
+    // We do this in action_t::init_finished() instead of at parsing so that we can account for any damage values set in
+    // the final derived constructor.
+    if ( !BASE::does_direct_damage() && !BASE::does_periodic_damage() )
+    {
+      remove_damage_entries( ta_multiplier_effects, "tick damage" );
+      remove_damage_entries( da_multiplier_effects, "direct damage" );
+      remove_damage_entries( crit_bonus_effects, "crit bonus multiplier" );
+      remove_damage_entries( target_multiplier_effects, "damage to target" );
+    }
+
     initialize_cooldown_buffs();
   }
 
